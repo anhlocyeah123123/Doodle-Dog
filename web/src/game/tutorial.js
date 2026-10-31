@@ -6,13 +6,13 @@
 // Thêm/bớt bước: sửa mảng STEPS. Mỗi bước có:
 //   say   lời dặn (dòng chính) · sub lời phụ
 //   setup(sim)  đặt ma / chỉnh trạng thái cho bước này
-//   done  'clear' (hết ma thường) | 'heal' (vẽ tim xong) | 'pop' (chạm phá ký tự)
+//   done  'clear' (hết ma thường) | 'heal' (vẽ tim xong) | 'shield' (bật lá chắn) | 'pop' (chạm phá ký tự)
 //   demo(sim)  nét mẫu cho bàn tay (tọa độ thế giới), hoặc {tap:[x,y]} cho thao tác chạm
-import { CX, BAL } from '../core/config.js';
+import { CX, CY, BAL } from '../core/config.js';
 
 /** @typedef {import('../core/sim.js').Sim} Sim */
 /** @typedef {{path?:number[][], tap?:number[]}} Demo */
-/** @typedef {{say:string, sub?:string, setup:(sim:Sim)=>void, done:'clear'|'heal'|'pop', demo:(sim:Sim)=>Demo|null}} Step */
+/** @typedef {{say:string, sub?:string, setup:(sim:Sim)=>void, done:'clear'|'heal'|'shield'|'pop', demo:(sim:Sim)=>Demo|null}} Step */
 
 // ---- nét mẫu quanh vị trí con ma (gx, gy) ----
 const line = (ax, ay, bx, by) => [[ax, ay], [bx, by]];
@@ -59,12 +59,15 @@ export const STEPS = [
     done: 'clear', demo: () => ({ path: SHAPE.LIGHTNING(CX + 90, 230) }) },
   { say: 'Bị ma cắn mất máu? Vẽ TRÁI TIM ♥', sub: 'Ma trái tim chỉ xuất hiện khi bạn thiếu máu, và không cắn',
     setup: (s) => { s.hp = BAL.hp - 1; s.place(CX + 230, 245, ['HEART'], true); }, done: 'heal', demo: demoFor },
+  { say: 'Vẽ VÒNG TRÒN quanh Cún: lá chắn!', sub: `Hất ma ra xa, chặn đồ rơi trong ${BAL.shieldSec} giây · mỗi màn chỉ dùng 1 lần`,
+    setup: (s) => { s.shieldUsed = false; s.shield = 0; s.place(CX - 170, 270, ['VERTICAL']); s.place(CX + 175, 265, ['HAT_UP']); },
+    done: 'shield', demo: () => ({ path: Array.from({ length: 41 }, (_, i) => { const a = -Math.PI / 2 - (i / 40) * Math.PI * 2; return [CX + Math.cos(a) * 130, CY - 10 + Math.sin(a) * 118]; }) }) },
   { say: 'Boss ném đồ xuống: CHẠM để phá!', sub: 'Chạm nhẹ vào quả bí đang rơi',
     setup: (s) => { s.drop(CX + 170, 28, 150); }, done: 'pop',
     demo: (s) => (s.syms[0] ? { tap: [s.syms[0].x, s.syms[0].y] } : null) },
 ];
 
-const PRAISE = ['Giỏi lắm!', 'Chuẩn luôn!', 'Tuyệt!', 'Đỉnh!', 'Quá đẹp!', 'Xuất sắc!', 'Hồi máu rồi!', 'Hoàn hảo!'];
+const PRAISE = ['Giỏi lắm!', 'Chuẩn luôn!', 'Tuyệt!', 'Đỉnh!', 'Quá đẹp!', 'Xuất sắc!', 'Hồi máu rồi!', 'Chắn ngon!', 'Hoàn hảo!'];
 const DEMO_DELAY = 0.6;   // giây trước khi bàn tay vẽ mẫu lần đầu
 const IDLE_AGAIN = 2.2;   // người chơi vẽ sai / ngừng tay bao lâu thì hiện lại bàn tay
 
@@ -98,7 +101,7 @@ export class Tutorial {
   /** Đọc sự kiện của Sim TRƯỚC khi Session xử lý hiệu ứng. @param {any[]} ev */
   observe(ev) {
     for (const e of ev) {
-      if (e.k === 'heal' || e.k === 'pop') { if (this.step?.done === e.k) this.got = true; }
+      if (e.k === 'heal' || e.k === 'pop' || e.k === 'shield') { if (this.step?.done === e.k) this.got = true; }
       if (e.k === 'miss') this.fail();
     }
   }

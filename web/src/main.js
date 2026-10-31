@@ -6,6 +6,7 @@ import { startLoop } from './engine/loop.js';
 import { audio } from './engine/audio.js';
 import { draw } from './render/draw.js';
 import { drawCutscene } from './render/cutscene.js';
+import { drawOutro } from './render/outro.js';
 import { ink } from './render/ink.js';
 import { setCacheScale } from './render/cache.js';
 import { VIEW, fitView } from './render/view.js';
@@ -40,7 +41,7 @@ function applyQuality() {
 function layout() {
   const r = safe.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
-  fitView(r.width, r.height, session?.state === 'cutscene');
+  fitView(r.width, r.height, session?.state === 'cutscene' || session?.state === 'outro');   // phim: phủ kín cả màn rất rộng
   canvas.style.width = `${VIEW.w * VIEW.s}px`;
   canvas.style.height = `${VIEW.h * VIEW.s}px`;
   applyQuality();
@@ -60,7 +61,7 @@ const ui = setupUI({
   start: (level) => session?.begin(level),
   story: () => session?.startStory(),
   skip: () => session?.skip(),
-  quit: () => { if (session) { session.state = 'idle'; session.sim = null; session.tut = null; } ctx.clearRect(0, 0, VIEW.w, VIEW.h); },
+  quit: () => { if (session) { session.state = 'idle'; session.sim = null; session.tut = null; session.outro = null; } layout(); ctx.clearRect(0, 0, VIEW.w, VIEW.h); },
   setPaused: (p) => { loop.paused = p; },
   isPlaying: () => !!session && session.state !== 'idle',
 });
@@ -70,6 +71,7 @@ const loop = startLoop(
   () => {
     if (!A || !session) return;
     if (session.state === 'cutscene') drawCutscene(ctx, A, session.cutT, ink.low);
+    else if (session.state === 'outro' && session.outro) drawOutro(ctx, A, session.outro, ink.low);
     else if (session.sim) draw(ctx, A, session.view());
   },
   () => { if (tier < TIERS.length - 1) { tier++; applyQuality(); } },
@@ -78,7 +80,8 @@ const loop = startLoop(
 loadAssets()
   .then((assets) => {
     A = assets;
-    session = new Session(assets, trail, { onBackground: setBackground, onMenu: ui.toMenu, onSkippable: (on) => { ui.setSkippable(on); layout(); } });
+    session = new Session(assets, trail, { onBackground: setBackground, onMenu: ui.toMenu, onSkippable: (on) => { ui.setSkippable(on); layout(); },
+      onOutro: () => { ui.outro(); layout(); }, onVictory: ui.victory, onTimeStop: ui.timeStop });
     layout();
     ui.ready(assets);
   })

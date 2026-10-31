@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="vi">
 <script>/* đánh dấu iPhone/iPad (kể cả iPad đời mới báo là Mac) và chế độ đã cài như ứng dụng */
-if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) document.documentElement.classList.add(navigator.standalone ? "ios-app" : "ios");</script>
+if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) document.documentElement.classList.add(navigator.standalone ? "ios-app" : "ios");
+else if (/Android/i.test(navigator.userAgent)) document.documentElement.classList.add("and");</script>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -64,11 +65,70 @@ if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIn
           <li><svg viewBox="0 0 60 60"><path d="M10 50 50 10"/><circle cx="10" cy="50" r="4"/></svg><b>Chéo</b><span>quét đường chéo</span></li>
           <li><svg viewBox="0 0 60 60"><path d="M10 6 46 20 12 36 48 52"/><circle cx="10" cy="6" r="4"/></svg><b>Sét</b><span>mọi ma, hồi 4 giây</span></li>
           <li><svg viewBox="0 0 60 60"><path d="M30 52C4 34 8 10 24 12c4 1 6 4 6 8 0-4 2-7 6-8 16-2 20 22-6 40Z"/></svg><b>Tim</b><span>hồi máu (ma ♥)</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M30 9a22 22 0 1 0 .1 0"/><path d="M38 6l-8 3 6 6" /><circle cx="30" cy="9" r="4"/></svg><b>Vòng quanh Cún</b><span>lá chắn 5s · 1 lần/màn</span></li>
           <li><svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="9" class="fill"/><circle cx="30" cy="30" r="20"/></svg><b>Chạm</b><span>phá đồ boss ném</span></li>
         </ul>
         <div class="row">
           <button class="close big">Đã hiểu</button>
           <button id="replay">🎬 Xem phim mở đầu + màn tập</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="victory" class="sheet" hidden>
+      <div class="card narrow vcard">
+        <div class="stars" aria-hidden="true">✦ ✧ ✦</div>
+        <h2>Bạn đã chiến thắng!</h2>
+        <p class="hint">Cún đã hạ ma trùm và lấy lại cuốn sách phép.</p>
+        <p class="vscore">Điểm: <b id="vScore">0</b></p>
+        <button id="vNext" class="big">Tiếp tục</button>
+      </div>
+      <div class="tbc" hidden>Còn tiếp<span>.</span><span>.</span><span>.</span></div>
+    </section>
+
+    <!-- mở link trong Zalo / Messenger / Facebook...: khuyên mở bằng trình duyệt thật -->
+    <section id="inapp" class="sheet" hidden>
+      <div class="card narrow">
+        <h2>Mở bằng trình duyệt nhé!</h2>
+        <p class="hint">Bạn đang mở game trong <b id="iaName">ứng dụng</b>. Trình duyệt trong app hay <b>tắt tiếng</b>, <b>không cho toàn màn hình</b> và dễ giật.</p>
+        <ol class="steps">
+          <li class="ios-only">Bấm nút <b>⋯</b> hoặc biểu tượng <b>la bàn / ↗</b> ở góc màn hình → chọn <b>Mở bằng Safari</b> (hoặc <i>Mở trong trình duyệt</i>).</li>
+          <li class="and-only">Bấm <b>Mở bằng Chrome</b> bên dưới. Không được thì bấm <b>⋯</b> ở góc → <b>Mở bằng trình duyệt</b>.</li>
+          <li class="other-only">Bấm <b>⋯</b> ở góc màn hình → <b>Mở bằng trình duyệt</b>.</li>
+          <li>Hoặc <b>sao chép link</b> rồi dán vào Safari / Chrome.</li>
+        </ol>
+        <input id="iaLink" readonly aria-label="Link trò chơi">
+        <div class="row">
+          <button id="iaChrome" class="big and-only">Mở bằng Chrome</button>
+          <button id="iaCopy">📋 Sao chép link</button>
+          <button id="iaStay">Vẫn chơi ở đây</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- lần đầu vào trang: mời xem phim mở đầu + màn tập (bỏ qua được) -->
+    <section id="welcome" class="sheet" hidden>
+      <div class="card narrow">
+        <h2>Chào mừng tới Doodle Dog!</h2>
+        <p class="hint">Lần đầu chơi: xem phim mở đầu và học vẽ bùa (khoảng 1 phút).</p>
+        <p class="hint small fs-yes">⛶ Game sẽ bật <b>toàn màn hình</b> để chơi đẹp nhất.</p>
+        <p class="hint small ios-only">Mẹo iPhone: <b>Chia sẻ → Thêm vào MH chính</b> để chơi toàn màn hình như ứng dụng.</p>
+        <div class="row">
+          <button id="wStart" class="big">▶ Bắt đầu</button>
+          <button id="wSkip">Bỏ qua hướng dẫn</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- trước khi vào game: nhắc bật toàn màn hình (mỗi lần mở web hỏi 1 lần) -->
+    <section id="fsAsk" class="sheet" hidden>
+      <div class="card narrow">
+        <h2>Chơi toàn màn hình nhé?</h2>
+        <p class="hint fs-yes">Bật <b>toàn màn hình</b> để có trải nghiệm tốt nhất: rộng hơn, không bị thanh địa chỉ che.</p>
+        <p class="hint ios-only">Safari không tự bật được. Bấm <b>Chia sẻ → Thêm vào MH chính</b> rồi mở game từ màn hình chính, hoặc <b>aA → Ẩn thanh công cụ</b>.</p>
+        <div class="row">
+          <button id="fsYes" class="big fs-yes">⛶ Toàn màn hình & chơi</button>
+          <button id="fsNo"><span class="fs-yes">Chơi luôn</span><span class="no-fs">Đã hiểu, chơi thôi</span></button>
         </div>
       </div>
     </section>

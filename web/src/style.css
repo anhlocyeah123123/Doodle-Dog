@@ -160,7 +160,7 @@ h2 { margin: 0; font-size: max(24px, calc(var(--u) * 8)); }
 .hint.small { font-size: max(13px, calc(var(--u) * 3.2)); opacity: .8; }
 .spells {
   list-style: none; margin: 0; padding: 0; width: 100%;
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: max(6px, calc(var(--u) * 1.6));
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: max(6px, calc(var(--u) * 1.6));
 }
 .spells li {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: max(6px, calc(var(--u) * 1.5));
@@ -220,3 +220,42 @@ h2 { margin: 0; font-size: max(24px, calc(var(--u) * 8)); }
   .brush path { animation: none; stroke-dashoffset: 0; }
 }
 #hud #skip { letter-spacing: 0; background: rgba(255, 255, 255, .92); }
+
+/* ---------- chiến thắng: làm mờ + tối khung hình đóng băng phía sau ---------- */
+#victory { background: rgba(4, 4, 16, .5); -webkit-backdrop-filter: blur(7px) brightness(.8); backdrop-filter: blur(7px) brightness(.8); }
+.vcard { animation: pop .55s cubic-bezier(.2, 1.6, .4, 1) both; }
+.vcard h2 { font-size: max(30px, calc(var(--u) * 10)); color: var(--hot); text-shadow: 2px 2px 0 #fff; transform: rotate(-2deg); }
+.vcard .stars { font-size: max(22px, calc(var(--u) * 6)); color: #e0a800; letter-spacing: 10px; animation: tw 1.2s ease-in-out infinite alternate; }
+.vscore { margin: 0; font-size: max(18px, calc(var(--u) * 5)); }
+@keyframes pop { from { transform: scale(.6) rotate(-6deg); opacity: 0; } }
+@keyframes tw { to { opacity: .45; transform: scale(1.12); } }
+.tbc {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer;
+  font-size: max(40px, calc(var(--u) * 14)); font-weight: 700; color: #fff; text-shadow: 3px 3px 0 var(--ink), -2px -2px 0 var(--ink);
+  animation: fadein 1s ease both;
+}
+.tbc span { animation: dot 1.2s infinite; opacity: 0; }
+.tbc span:nth-child(2) { animation-delay: .25s; }
+.tbc span:nth-child(3) { animation-delay: .5s; }
+@keyframes dot { 30%, 70% { opacity: 1; } }
+@keyframes fadein { from { opacity: 0; letter-spacing: .3em; } }
+.vcard { min-width: min(88%, 580px); }
+.vcard h2 { white-space: nowrap; }
+
+/* ---------- nội dung theo nền tảng (lớp do script đầu index.html / menu.js gắn lên <html>) ---------- */
+.ios-only, .and-only, .other-only, .fs-yes { display: none; }
+.ios .ios-only, .and .and-only, .fs-ok .fs-yes { display: revert; }
+html:not(.ios):not(.and) .other-only { display: revert; }
+.fs-ok .no-fs { display: none; }
+#iaLink {
+  width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; background: #fff; color: var(--ink);
+  border: 2px dashed rgba(27, 27, 184, .45); border-radius: 8px; -webkit-user-select: text; user-select: text; touch-action: auto;
+}
+
+/* thời gian ngưng đọng (đầu đoạn kết): mọi thứ ngoài lãnh địa xám lại */
+#stage { transition: filter .5s ease; }
+#stage.timestop { filter: grayscale(1) contrast(1.15) brightness(.82); transition: filter .12s ease; }
+.vcard { min-width: min(90%, 680px); }
+.vcard h2 { font-size: max(26px, min(calc(var(--u) * 9), 6vw)); }
+.card.vcard { min-width: min(90%, 640px); max-width: min(94%, 780px); }
+.card.vcard h2 { font-size: max(26px, min(calc(var(--u) * 7.5), 5.5vw)); }

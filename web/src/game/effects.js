@@ -35,7 +35,7 @@ export class Effects {
   toast(txt, kind = 'info', life = 2.2) {
     this.toasts = this.toasts.filter((o) => o.txt !== txt);   // không lặp cùng một thông báo
     this.toasts.push({ txt, kind, t: 0, life });
-    if (this.toasts.length > 3) this.toasts.shift();
+    if (this.toasts.length > 2) this.toasts.shift();   // tối đa 2 thông báo, xếp từ đáy màn hình lên
   }
 
   update(dt) {

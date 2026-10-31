@@ -8,8 +8,8 @@
 // - iPhone gạt công tắc im lặng thì SFX tắt (hành vi của iOS), nhạc nền vẫn kêu.
 
 const AC = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-const GAIN = { 3: 0.7, 4: 0.6, 5: 1 };   // cân bằng theo đo thực tế (5.mp3 nhỏ hơn ~4dB)
-const SFX = ['3', '4', '5'];
+const GAIN = { 3: 0.7, 4: 0.6, 5: 1, ult: 1 };   // cân bằng theo đo thực tế (5.mp3 nhỏ hơn ~4dB)
+const SFX = ['3', '4', '5', 'ult'];   // ult: tiếng đòn kết liễu boss (7.9 giây, ~80KB)
 
 export const audio = {
   /** @type {AudioContext|null} */ ctx: null,
@@ -18,6 +18,7 @@ export const audio = {
   /** @type {HTMLAudioElement|null} */ music: null,
   muted: false,
   started: false,
+  hold: false,   // đang diễn đoạn kết: giữ nhạc nền im, chạm màn hình cũng không bật lại
 
   /** Tải sẵn dữ liệu SFX ngay khi mở trang (chưa cần chạm) để tiếng đầu tiên không bị mất. */
   init() {
@@ -57,8 +58,17 @@ export const audio = {
   },
 
   playMusic() {
-    if (this.started && !this.muted && this.music && this.music.paused) this.music.play().catch(() => {});
+    if (this.started && !this.muted && !this.hold && this.music && this.music.paused) this.music.play().catch(() => {});
   },
+
+  /** Tắt tạm nhạc nền (đoạn kết) / bật lại. @param {boolean} on */
+  duck(on) {
+    this.hold = on;
+    if (on) this.music?.pause(); else this.playMusic();
+  },
+
+  /** Đã giải mã xong file âm thanh n chưa. */
+  has(n) { return !!this.buf[n]; },
 
   /** @param {string} n tên file · rate đổi cao độ · delay giây */
   sfx(n, vol = 1, rate = 1, delay = 0) {

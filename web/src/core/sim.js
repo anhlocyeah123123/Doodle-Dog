@@ -11,10 +11,12 @@
 //   kill {x, y, s, boss, pts} ma bị diệt
 //   heal {x, y}               hồi máu
 //   phase                     boss sang pha 2
+//   finale {x, y}             hết bùa pha cuối: boss bị giữ lại để Session diễn đòn kết liễu, rồi gọi finishBoss()
 //   bolt                      tung sét thành công
 //   miss {cd}                 bùa không trúng ma nào (cd = sét đang hồi)
 //   pop {x, y}                phá ký tự rơi
 //   hit                       nhân vật mất máu
+//   shield                    bật lá chắn · block {x, y} lá chắn hất 1 con ma ra
 //   over / clear              thua / qua màn (won = qua màn cuối)
 import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL } from './config.js';
 
@@ -33,8 +35,9 @@ import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL } from './config.js';
  * @property {boolean} boss
  * @property {boolean} heal  ma tim (không tấn công)
  * @property {number} ph     pha boss (1|2)
+ * @property {number} [ent]  boss đang lướt vào từ mép phải (1) -> chưa tiến về nhân vật
  */
-/** @typedef {{x:number, y:number, vy:number, ch:string}} FallingSymbol */
+/** @typedef {{x:number, y:number, vy:number, ch:string, w:number}} FallingSymbol  w: giây báo trước còn lại (> 0: chưa rơi) */
 
 /** PRNG có seed (mulberry32) -> cùng seed = cùng diễn biến, cần cho replay/online. */
 const rng = (a) => () => {
@@ -91,6 +94,9 @@ export class Sim {
     this.healCd = c.heal * 0.5;
     this.boltCd = 0;
     this.symT = 0;
+    /** @type {Ghost|null} */ this.finale = null;   // boss chờ đòn kết liễu
+    this.shield = 0;           // giây lá chắn còn lại
+    this.shieldUsed = false;   // mỗi màn chỉ 1 lần
     this.cleared = false;
     this.won = false;
   }
@@ -112,7 +118,8 @@ export class Sim {
   spawn(w) {
     for (let i = 0; i < w.n; i++) {
       let x = CX, y = -70;
-      if (!w.boss) {
+      if (w.boss) { x = W + 220; y = 175; }
+      else {
         const slot = (i + 0.5) / w.n + (this.r() - 0.5) * (0.7 / w.n);   // vị trí đều + chút ngẫu nhiên
         const a = Math.PI * (1.04 + 0.92 * Math.min(1, Math.max(0, slot)));   // từ trái (≈180°) qua đỉnh tới phải (≈360°)
         x = CX + Math.cos(a) * BAL.spawnR;
@@ -121,8 +128,16 @@ export class Sim {
       /** @type {Ghost} */
       const g = { id: this.id++, x, y, vx: 0, vy: 0, sp: 0, seq: this.seq(w.m), i: 0, sz: w.s, boss: w.boss, heal: false, ph: 1 };
       this.aim(g, BAL.v0 * w.v * (w.boss ? BAL.bossK : 0.9 + this.r() * 0.2));
+      if (w.boss) this.bossEnter(g);
       this.ghosts.push(g);
     }
+  }
+
+  /** Boss lướt vào từ ngoài mép phải màn hình (lúc xuất hiện, sang pha 2, sau khi cắn). Giữ nguyên g.sp. */
+  bossEnter(g) {
+    g.x = W + 220; g.y = 175;
+    g.vx = -BAL.bossEnter; g.vy = 0;
+    g.ent = 1;
   }
 
   spawnHealGhost() {
@@ -136,9 +151,10 @@ export class Sim {
 
   /** @param {number} dt giây */
   tick(dt) {
-    if (this.over || this.cleared || this.won) return;
+    if (this.over || this.cleared || this.won || this.finale) return;
     this.t += dt;
     this.boltCd = Math.max(0, this.boltCd - dt);
+    this.shield = Math.max(0, this.shield - dt);
 
     while (this.waves.length && this.waves[0].t <= this.t) {
       const w = /** @type {any} */ (this.waves.shift());
@@ -161,20 +177,35 @@ export class Sim {
         continue;
       }
       g.y += g.vy * dt;
+      if (g.ent) {   // boss đang lướt vào: tới chỗ thì mới bắt đầu tiến về nhân vật
+        if (g.x <= W - 140) { g.ent = 0; this.aim(g, g.sp); }
+        continue;
+      }
+      if (this.shield > 0 && distToDog(g) < BAL.shieldR + 30 * g.sz) {   // lá chắn: hất ngược ra, không cắn được
+        this.push(g, BAL.shieldR + 30 * g.sz + 70);
+        this.ev.push({ k: 'block', x: g.x, y: g.y });
+        continue;
+      }
       if (!this.tut && distToDog(g) < BAL.hitR * Math.pow(g.sz, 0.7)) {
         this.damage(g.boss ? 2 : 1);
-        if (g.boss) { g.x = CX; g.y = -70; this.aim(g, g.sp); }   // boss cắn xong bay lên lại
+        if (g.boss) this.bossEnter(g);   // boss cắn xong bay ra rồi lướt vào lại từ mép phải
         else this.ghosts.splice(i, 1);
       }
     }
 
     if (this.ghosts.some((g) => g.boss) && (this.symT += dt) > BAL.symEvery) {
       this.symT = 0;
-      this.syms.push({ x: CX + (this.r() - 0.5) * 300, y: -20, vy: BAL.symSpeed, ch: SYMBOLS[(this.r() * SYMBOLS.length) | 0] });
+      this.syms.push({ x: CX + (this.r() - 0.5) * 300, y: -20, vy: BAL.symSpeed, ch: SYMBOLS[(this.r() * SYMBOLS.length) | 0], w: BAL.symWarn });
     }
     for (let i = this.syms.length - 1; i >= 0; i--) {
       const s = this.syms[i];
+      if (s.w > 0) { s.w -= dt; continue; }   // đang báo trước: vòng trên mặt đất nhấp nháy, chưa rơi
       s.y += s.vy * dt;
+      if (this.shield > 0 && Math.abs(s.x - CX) < BAL.shieldR && s.y > CY - BAL.shieldR - 10) {   // lá chắn phá đồ rơi
+        this.ev.push({ k: 'pop', x: s.x, y: s.y });
+        this.syms.splice(i, 1);
+        continue;
+      }
       if (s.y > CY - 20) {
         if (!this.tut && Math.abs(s.x - CX) < BAL.symHitR) this.damage(1);
         this.syms.splice(i, 1);
@@ -208,6 +239,19 @@ export class Sim {
    * @returns {boolean} có trúng không
    */
   cast(s, geo = null) {
+    if (s === 'SHIELD') {
+      if (this.shieldUsed) { this.ev.push({ k: 'miss', shield: true }); return false; }
+      this.shieldUsed = true;
+      this.shield = BAL.shieldSec;
+      this.ev.push({ k: 'shield' });
+      for (const g of this.ghosts) {   // hất mọi ma ở gần ra xa
+        const d = distToDog(g);
+        if (!g.heal && d < BAL.shieldR * 2) this.push(g, d + BAL.shieldPush);
+      }
+      for (const sy of this.syms) this.ev.push({ k: 'pop', x: sy.x, y: sy.y });
+      this.syms = [];
+      return true;
+    }
     if (s === 'LIGHTNING') {
       const targets = this.ghosts.filter((g) => !g.heal);
       if (this.boltCd > 0 || (!targets.length && !this.syms.length)) {
@@ -251,10 +295,20 @@ export class Sim {
       this.ev.push({ k: 'heal', x, y });
       return;
     }
-    if (g.boss && g.ph === 1) {   // pha 2: chuỗi bùa mới, quay lại đỉnh, nhanh hơn
-      g.ph = 2; g.i = 0; g.seq = this.seq(g.seq.length); g.x = CX; g.y = -70;
-      this.aim(g, g.sp * BAL.bossPhase2);
+    if (g.boss && g.ph === 1) {   // pha 2: chuỗi bùa mới, lướt vào lại từ mép phải, nhanh hơn
+      g.ph = 2; g.i = 0; g.seq = this.seq(g.seq.length);
+      g.sp *= BAL.bossPhase2;
+      this.bossEnter(g);
       this.ev.push({ k: 'phase' });
+      return;
+    }
+    if (g.boss) {   // hết bùa pha cuối: giữ boss lại cho đòn kết liễu (Session diễn, rồi gọi finishBoss)
+      g.vx = g.vy = 0; g.ent = 0;
+      this.ghosts = [g];
+      this.syms = [];
+      this.shield = 0;
+      this.finale = g;
+      this.ev.push({ k: 'finale', x, y });
       return;
     }
     const pts = 10 * g.seq.length * (g.boss ? 10 : 1);
@@ -277,10 +331,29 @@ export class Sim {
   }
 
   /** Màn tập: thả 1 ký tự rơi chậm tại x, bắt đầu từ độ cao y. */
-  drop(x, vy = 45, y = -20) { this.syms.push({ x, y, vy, ch: '🎃' }); }
+  drop(x, vy = 45, y = -20) { this.syms.push({ x, y, vy, ch: '🎃', w: 0 }); }
+
+  /** Kết thúc đòn kết liễu: boss biến mất, cộng điểm, thắng game. */
+  finishBoss() {
+    const g = this.finale;
+    if (!g) return;
+    this.remove(g);
+    this.kills++;
+    this.score += 10 * g.seq.length * 10;
+    this.finale = null;
+    this.won = true;
+  }
+
+  /** Đẩy ma g ra xa tâm nhân vật tới khoảng cách r (giữ hướng bay về nhân vật). @param {Ghost} g */
+  push(g, r) {
+    const dx = g.x - CX, dy = g.y - CY, d = Math.hypot(dx, dy) || 1;
+    g.x = CX + (dx / d) * r;
+    g.y = Math.min(CY - 40, CY + (dy / d) * r);   // không đẩy xuống dưới mặt đất
+    this.aim(g, g.sp);
+  }
 
   /** @param {Ghost} g */
-  remove(g) { this.ghosts.splice(this.ghosts.indexOf(g), 1); }
+  remove(g) { const i = this.ghosts.indexOf(g); if (i >= 0) this.ghosts.splice(i, 1); }   // i < 0: đã bị dọn (vd boss vào đòn kết liễu)
 
   /** Chạm vào ký tự rơi để phá. @returns {number} số ký tự phá được */
   pop(x, y) {

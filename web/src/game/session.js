@@ -4,7 +4,7 @@
 //   cutscene (phim mở đầu) ──> tutorial (màn tập) ──> intro màn 1     [lần đầu chơi, bỏ qua được]
 //   intro ──(chạy vào giữa)──> play ──┬─ qua màn ──> clear ──(chạm)──> intro màn sau
 //                                     ├─ hết máu ──> over  ──(chạm)──> intro màn đó
-//                                     └─ hạ boss ──> won   ──(chạm)──> về menu
+//                                     └─ hạ boss ──> outro (phép tối thượng) ──> bảng chiến thắng ──> còn tiếp… ──> menu
 import { CX, GY, CY, BAL, LEVELS, LAST, SPELL_ANIM, DEFAULT_CAST_ANIM, SPELL_COLOR } from '../core/config.js';
 import { Sim } from '../core/sim.js';
 import { recognize, strokeGeometry } from '../core/recognizer.js';
@@ -13,6 +13,7 @@ import { audio } from '../engine/audio.js';
 import { bolt } from '../render/ink.js';
 import { areaFx } from '../render/sigil.js';
 import { CUES, DURATION } from '../render/cutscene.js';
+import { OUTRO_CUES, OUTRO_FIRE, OUTRO_HIT, OUTRO_DUR, TIMESTOP_END } from '../render/outro.js';
 import { Tutorial } from './tutorial.js';
 
 const SIGIL_Y = GY - 190;   // trận pháp nổi trên đầu nhân vật
@@ -42,6 +43,14 @@ const CUE_SOUND = {
   laugh: () => audio.arp([2, 1.68, 2, 1.68], 0.35),
   angry: () => audio.sfx('4', 0.5, 1.3),
   title: () => audio.arp([1, 1.26, 1.5, 2]),
+  // đoạn kết: cả đoạn ult.mp3 (khớp nhịp hình, xem render/outro.js). Chưa tải xong -> ghép tạm từ tiếng có sẵn.
+  ult: () => {
+    if (audio.has('ult')) { audio.sfx('ult', 1); return; }
+    audio.sfx('4', 0.7, 0.45, 0.15);              // thời gian ngưng
+    audio.sfx('3', 0.4, 1.0, 2.9); audio.sfx('3', 0.45, 1.4, 3.5); audio.sfx('3', 0.5, 1.9, 4.1);   // dồn lực
+    audio.sfx('4', 1, 0.9, OUTRO_FIRE);            // bắn
+    audio.sfx('5', 1, 0.5, OUTRO_HIT); audio.sfx('4', 1, 0.4, OUTRO_HIT);   // nổ
+  },
 };
 
 export const progress = {
@@ -53,7 +62,7 @@ export class Session {
   /**
    * @param {import('../engine/assets.js').Assets} A
    * @param {{pts:number[][], down:boolean, fade:number, touch:boolean}} trail
-   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void, onSkippable:(on:boolean)=>void}} hooks
+   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void, onSkippable:(on:boolean)=>void, onOutro:()=>void, onVictory:(score:number)=>void, onTimeStop:(on:boolean)=>void}} hooks
    */
   constructor(A, trail, hooks) {
     this.A = A;
@@ -73,6 +82,20 @@ export class Session {
     this.cutT = 0;     // thời gian trong phim mở đầu
     this.cueI = 0;     // mốc âm thanh tiếp theo
     this.tutEnd = 0;   // đếm ngược từ lúc học xong tới màn 1
+    /** @type {{t:number, bx:number, by:number, dir:number, cue:number, hit:boolean, shown:boolean, stop:boolean}|null} */
+    this.outro = null; // đoạn kết sau khi hạ boss cuối
+  }
+
+  /** Hạ boss cuối: diễn "phép tối thượng" (render/outro.js) thay cho animation thắng thường. */
+  startOutro(bx, by) {
+    this.state = 'outro';
+    this.outro = { t: 0, bx, by, dir: bx >= CX ? 1 : -1, cue: 0, hit: false, shown: false, stop: true };
+    this.trail.pts = []; this.trail.down = false;
+    this.fx.reset();
+    this.msg = null;
+    audio.duck(true);              // nhạc nền im để nghe rõ tiếng kết liễu
+    this.hooks.onOutro();
+    this.hooks.onTimeStop(true);   // cảnh ngoài lãnh địa xám lại: thời gian ngưng đọng
   }
 
   /** Phim mở đầu -> màn tập -> màn 1. */
@@ -112,6 +135,7 @@ export class Session {
   }
 
   begin(level, hp = BAL.hp, score = 0) {
+    this.outro = null;
     this.hooks.onSkippable(false);
     this.tut = null;
     this.tutEnd = 0;
@@ -151,7 +175,7 @@ export class Session {
       if (sim.pop(pts[0][0], pts[0][1])) audio.sfx('3', 0.5, 1.8);
       return;
     }
-    const s = recognize(pts, { touch });
+    const s = recognize(pts, { touch, around: [CX, CY] });   // vòng kín quanh Cún = lá chắn
     if (!s) {   // không nhận ra: trận pháp '?' mờ + gợi ý (tối đa 1 lần / 4 giây)
       this.fx.add({ t: 'sigil', x: this.dog.x, y: SIGIL_Y, s: null, ok: false, id: fxId++, pts: thin(pts), rate: SIGIL_RATE });
       if (this.tut) this.tut.fail();
@@ -214,8 +238,23 @@ export class Session {
           audio.arp([1.26, 1.5, 2].slice(0, Math.min(3, e.n)), 0.5);
           break;
         case 'bolt': fx.flash = 0.3; break;
-        case 'miss': if (e.cd) fx.toast('Sét đang hồi…', 'warn', 1); else if (this.tut) fx.toast('Chưa đúng bùa — vẽ theo bàn tay nhé', 'warn', 1.4); break;
+        case 'miss':
+          if (e.cd) fx.toast('Sét đang hồi…', 'warn', 1);
+          else if (e.shield) fx.toast('Lá chắn đã dùng ở màn này rồi', 'warn', 1.4);
+          else if (this.tut) fx.toast('Chưa đúng bùa — vẽ theo bàn tay nhé', 'warn', 1.4);
+          break;
+        case 'shield':
+          fx.toast(`Lá chắn! ${BAL.shieldSec} giây`, 'info', 1.4);
+          fx.flash = 0.15; fx.shake = 0.25;
+          fx.burst(CX, CY, 18, ['#14a89c', '#fff', '#9be7ff']);
+          audio.sfx('4', 0.5, 1.6); audio.arp([1.5, 2, 2.5], 0.4);
+          break;
+        case 'block':
+          fx.burst(e.x, e.y, 8, ['#14a89c', '#fff']);
+          audio.sfx('3', 0.35, 0.7);
+          break;
         case 'phase': fx.toast('Boss nổi giận!', 'boss'); fx.shake = 0.5; audio.sfx('4', 0.5, 0.5); break;
+        case 'finale': this.startOutro(e.x, e.y); break;   // hết bùa pha cuối -> đòn kết liễu
         case 'pop': fx.burst(e.x, e.y, 8, ['#fff', '#ffd23f']); break;
         case 'hit':
           fx.shake = 0.35; fx.red = 0.35;
@@ -228,6 +267,15 @@ export class Session {
 
   update(dt) {
     this.clock += dt;
+    if (this.state === 'outro' && this.outro) {   // đoạn kết: đếm giờ, âm thanh theo mốc, nổ -> thắng -> bảng chiến thắng
+      const o = this.outro;
+      o.t += dt;
+      while (o.cue < OUTRO_CUES.length && OUTRO_CUES[o.cue][0] <= o.t) CUE_SOUND[OUTRO_CUES[o.cue++][1]]?.();
+      if (o.stop && o.t >= TIMESTOP_END) { o.stop = false; this.hooks.onTimeStop(false); }
+      if (!o.hit && o.t >= OUTRO_HIT) { o.hit = true; this.sim?.finishBoss(); progress.set(LAST); }
+      if (!o.shown && o.t >= OUTRO_DUR) { o.shown = true; this.hooks.onVictory(this.sim?.score ?? 0); }
+      return;
+    }
     if (this.state === 'cutscene') {   // phim mở đầu: chỉ đếm giờ + phát âm thanh theo mốc
       this.cutT += dt;
       while (this.cueI < CUES.length && CUES[this.cueI][0] <= this.cutT) CUE_SOUND[CUES[this.cueI++][1]]?.();
@@ -266,6 +314,7 @@ export class Session {
 
     sim.tick(dt);
     this.handleEvents();
+    if (this.state !== 'play') return;   // vừa vào đoạn kết
     this.dogFace(dt);
 
     if (sim.over) this.finish('over', 'lose', 'Thua rồi…', `Điểm ${sim.score} · chạm để thử lại màn ${sim.level}`, () => audio.sfx('5', 0.8, 0.7));

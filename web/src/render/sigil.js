@@ -49,6 +49,7 @@ const PATHS = {
   DIAGONAL: [[-0.42, 0.42], [0.42, -0.42]],
   LIGHTNING: [[0.22, -0.5], [-0.22, 0.04], [0.18, 0.04], [-0.2, 0.5]],
   HEART,
+  SHIELD: Array.from({ length: 33 }, (_, i) => [Math.cos((i / 32) * TAU - 1.2) * 0.46, Math.sin((i / 32) * TAU - 1.2) * 0.46]),
 };
 
 /** Chia nhỏ đường gấp khúc để rung tay hiện ra trên cả đoạn thẳng dài. */
@@ -98,7 +99,7 @@ function inkLine(c, pts, w, color) {
 function drawGlyph(c, spell, x, y, size, prog, color, seed) {
   const base = spell && PATHS[spell];
   if (!base) { if (prog > 0.3) inkText(c, '?', x, y + size * 0.32, size * 0.9, 'center', '#6b6b80'); return; }
-  const pts = dense(base, spell === 'HEART' ? 1 : 6).map(([u, v], i) => [
+  const pts = dense(base, spell === 'HEART' || spell === 'SHIELD' ? 1 : 6).map(([u, v], i) => [
     x + u * size + Math.sin(i * 1.7 + seed) * size * 0.018,
     y + v * size + Math.cos(i * 2.3 + seed) * size * 0.018,
   ]);

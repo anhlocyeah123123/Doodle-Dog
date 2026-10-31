@@ -30,6 +30,8 @@ export function play(level, p, seed) {
   for (let t = 0; t < 240; t += DT) {
     sim.tick(DT);
     sim.ev.length = 0;
+    if (sim.finale) sim.finishBoss();   // game thật: Session diễn đòn kết liễu rồi mới gọi
+    if (sim.finale) sim.finishBoss();
     if (sim.over || sim.cleared || sim.won) break;
     if ((busy -= DT) > 0) continue;
 
@@ -37,6 +39,9 @@ export function play(level, p, seed) {
     const foes = sim.ghosts.filter((g) => !g.heal);
     const heal = sim.ghosts.find((g) => g.heal && g.x > 40 && g.x < 920);
     if (danger) { sim.pop(danger.x, danger.y); busy = 0.35; continue; }
+    // lá chắn (1 lần/màn): khi boss hoặc ma sắp cắn tới nơi
+    const close = foes.find((g) => Math.hypot(g.x - CX, g.y - 385) < (g.boss ? 230 : 120));
+    if (!sim.shieldUsed && close && (close.boss || sim.hp <= 2)) { busy = p.draw * 1.3; if (rand() < p.acc) sim.cast('SHIELD'); continue; }
 
     let spell = null, target = null;
     if (sim.boltCd === 0 && (foes.length >= 3 || sim.syms.length >= 2)) spell = 'LIGHTNING';

@@ -1,7 +1,7 @@
 // @ts-check
 // Chỉ VẼ: đọc trạng thái (sim + hiệu ứng) và vẽ lên canvas. Không thay đổi trạng thái game.
 // Ảnh nền là CSS phía sau canvas trong suốt -> trình duyệt tự ghép, không tốn công vẽ lại mỗi khung.
-import { GY, CX, GLYPH, BAL } from '../core/config.js';
+import { W, GY, CX, CY, GLYPH, BAL } from '../core/config.js';
 import { INK, ink, inkStroke, inkText, inkHeart, bubble } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
@@ -49,11 +49,16 @@ function drawGhost(c, A, g, t) {
     c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, g.x - w / 2, y - h / 2, w, h);
   }
   const top = y - h / 2 - 4;
-  if (g.boss) {   // boss: cả chuỗi bùa, bùa hiện tại tô vàng
-    const n = g.seq.length, x0 = g.x - (n - 1) * 17;
+  if (g.boss) {   // boss: cả chuỗi bùa, bùa hiện tại tô vàng to hơn
+    // Boss to, xuất hiện cao trên mép màn -> kẹp dãy bùa xuống dưới dòng tiêu đề để luôn nhìn thấy ngay từ đầu.
+    const by = Math.max(top - 6, -VIEW.oy + 82 * uiK());
+    // Boss lướt vào từ mép phải: dãy bùa cũng kẹp vào trong màn theo chiều ngang (chừa chỗ nút tạm dừng)
+    const n = g.seq.length, gap = 40, half = ((n - 1) * gap) / 2;
+    const cxRow = Math.min(Math.max(g.x, -VIEW.ox + half + 30), W + VIEW.ox - half - 40);
+    const x0 = cxRow - half;
     for (let i = 0; i < n; i++) {
-      const done = i < g.i;
-      bubble(c, x0 + i * 34, top - 6, 14, GLYPH[g.seq[i]], done ? '#aaa' : INK, i === g.i ? '#ffe066' : done ? '#ddd' : '#fff');
+      const done = i < g.i, cur = i === g.i;
+      bubble(c, x0 + i * gap, by, cur ? 19 : 15, GLYPH[g.seq[i]], done ? '#aaa' : INK, cur ? '#ffe066' : done ? '#ddd' : '#fff');
     }
   } else {
     const r = Math.round(19 * Math.min(1.35, uiK()));   // màn nhỏ: ký hiệu to hơn cho dễ đọc
@@ -61,6 +66,31 @@ function drawGhost(c, A, g, t) {
     const left = g.seq.length - g.i - 1;
     if (left > 0) inkText(c, '+' + left, g.x + 22, top - 2, 16);
   }
+}
+
+/** Vòm lá chắn nét mực quanh nhân vật; nhấp nháy trong giây cuối. */
+function drawShield(c, left, t) {
+  if (left < 1 && Math.sin(t * 30) > 0) return;
+  const r = BAL.shieldR, y = CY - 10;
+  c.save();
+  c.globalAlpha = 0.16; c.fillStyle = '#14a89c';
+  c.beginPath(); c.arc(CX, y, r, 0, TAU); c.fill();
+  c.globalAlpha = 0.95; c.lineCap = 'round';
+  c.beginPath();
+  for (let i = 0; i <= 48; i++) {   // vòng run tay, xoay chậm
+    const a = (i / 48) * TAU + t * 0.6, rr = r + Math.sin(i * 2.7 + t * 4) * 3;
+    i ? c.lineTo(CX + Math.cos(a) * rr, y + Math.sin(a) * rr) : c.moveTo(CX + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  c.strokeStyle = '#fff'; c.lineWidth = 9; c.stroke();
+  c.strokeStyle = '#14a89c'; c.lineWidth = 4; c.stroke();
+  if (!ink.low) {   // các nét gạch ngắn như bùa vẽ tay
+    c.strokeStyle = INK; c.lineWidth = 2.5;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU - t * 0.9;
+      c.beginPath(); c.moveTo(CX + Math.cos(a) * (r - 12), y + Math.sin(a) * (r - 12)); c.lineTo(CX + Math.cos(a) * (r + 10), y + Math.sin(a) * (r + 10)); c.stroke();
+    }
+  }
+  c.restore();
 }
 
 function drawFx(c, f) {
@@ -100,10 +130,11 @@ function drawToast(c, o, i) {
     inkText(g, o.txt, w / 2 + 3, h / 2 + size * 0.38, size, 'center');
   });
   e.ox = e.w / 2; e.oy = e.h / 2;
+  // Từ ĐÁY màn hình lên: ma bay tới từ phía trên nên đáy hầu như trống -> không che ký hiệu trên đầu ma.
   const k = uiK();
-  c.save(); c.translate(VIEW.w / 2, 0); c.scale(k, k);
-  c.globalAlpha = a;
-  blit(c, e, 0, (big ? 150 : 210) + i * 50 - (1 - a) * 16);
+  c.save(); c.translate(VIEW.w / 2, VIEW.h - 8 * k); c.scale(k, k);
+  c.globalAlpha = a * 0.95;
+  blit(c, e, 0, -e.h / 2 - i * 50 + (1 - a) * 16);
   c.restore();
 }
 
@@ -118,6 +149,16 @@ function drawHud(c, sim, title = true) {
   c.fillStyle = r >= 1 ? '#ffc400' : '#9bb'; c.fillRect(56, 108, 120 * r, 14);
   c.strokeStyle = INK; c.lineWidth = 3; c.strokeRect(56, 108, 120, 14);
   inkText(c, '⚡', 24, 124, 20, 'left', '#d99a00');
+  // lá chắn: còn (xanh) / đang chắn (đếm giờ) / đã dùng (gạch chéo)
+  const sx = 200, sy = 115, on = sim.shield > 0, used = sim.shieldUsed && !on;
+  c.globalAlpha = used ? 0.45 : 1;
+  c.fillStyle = on ? '#9be7df' : used ? '#ddd' : '#fff'; c.strokeStyle = INK; c.lineWidth = 3;
+  c.beginPath(); c.arc(sx, sy, 13, 0, TAU); c.fill(); c.stroke();
+  c.strokeStyle = '#14a89c'; c.lineWidth = 3;
+  c.beginPath(); c.arc(sx, sy, 7, 0, TAU); c.stroke();
+  if (on) { c.strokeStyle = '#14a89c'; c.lineWidth = 4; c.beginPath(); c.arc(sx, sy, 18, -Math.PI / 2, -Math.PI / 2 + TAU * (sim.shield / BAL.shieldSec)); c.stroke(); }
+  if (used) { c.strokeStyle = '#e2283c'; c.lineWidth = 3; c.beginPath(); c.moveTo(sx - 11, sy + 11); c.lineTo(sx + 11, sy - 11); c.stroke(); }
+  c.globalAlpha = 1;
   c.restore();
 }
 
@@ -154,6 +195,13 @@ export function draw(c, A, v) {
 
   for (const s of sim.syms) {   // ký tự boss thả: vòng đỏ = sẽ trúng nhân vật
     const danger = Math.abs(s.x - CX) < BAL.symHitR;
+    if (s.w > 0) {   // báo trước: vòng nhấp nháy + dấu "!" trên mặt đất, ký tự chưa rơi
+      const blink = 0.45 + 0.55 * Math.abs(Math.sin(t * 12));
+      c.strokeStyle = danger ? `rgba(255,60,80,${blink})` : `rgba(255,255,255,${blink * 0.7})`; c.lineWidth = 4;
+      c.beginPath(); c.ellipse(s.x, GY + 4, 34, 9, 0, 0, TAU); c.stroke();
+      if (danger) inkText(c, '!', s.x, GY - 8, 26, 'center', '#e2283c');
+      continue;
+    }
     c.strokeStyle = danger ? 'rgba(255,60,80,.85)' : 'rgba(255,255,255,.3)'; c.lineWidth = 3;
     c.beginPath(); c.ellipse(s.x, GY + 4, 30, 7, 0, 0, TAU); c.stroke();
     const e = cached(`sym|${s.ch}`, 52, 52, 26, 40, (g) => {
@@ -165,6 +213,7 @@ export function draw(c, A, v) {
   }
   for (const g of sim.ghosts) drawGhost(c, A, g, t);
   drawSprite(c, A, dog.state, t - dog.t0, dog.x, GY, dog.flip);
+  if (sim.shield > 0) drawShield(c, sim.shield, t);
   for (const f of fx.list) drawFx(c, f);
   for (const p of fx.parts) {
     const a = Math.min(1, (p.l / p.m) * 1.6);
@@ -182,6 +231,6 @@ export function draw(c, A, v) {
   if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(0, 0, VIEW.w, VIEW.h); }
   drawHud(c, sim, !v.guide);
   if (v.guide) drawBanner(c, v.guide.say, v.guide.sub, v.guide.a);
-  fx.toasts.forEach((o, i) => drawToast(c, o, i));
+  fx.toasts.forEach((o, i, all) => drawToast(c, o, all.length - 1 - i));   // mới nhất nằm dưới cùng
   if (v.msg) drawPanel(c, v.msg);
 }

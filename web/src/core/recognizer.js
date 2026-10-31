@@ -10,7 +10,11 @@
 // rồi mới đếm số khúc gấp: 0 = đường thẳng, 1 = chữ V, ≥2 = sét. Vòng kín = tim.
 
 /** @typedef {number[]} Pt */
-/** @typedef {{touch?:boolean}} RecOpts touch: nét vẽ bằng ngón tay (rung nhiều hơn chuột) */
+/**
+ * @typedef {{touch?:boolean, around?:number[]}} RecOpts
+ *   touch: nét vẽ bằng ngón tay (rung nhiều hơn chuột)
+ *   around: tâm nhân vật [x, y] -> vòng kín BAO QUANH điểm này là lá chắn (SHIELD), không phải tim
+ */
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const pathLen = (p) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i], p[i - 1]); return s; };
@@ -128,7 +132,7 @@ export function recognize(raw, opts = {}) {
   if (size < MIN_SIZE) return null;
 
   const len = pathLen(p), a = p[0], z = p[N - 1], d = dist(a, z);
-  if (d < len * CLOSED && w > 30 && h > 30) return 'HEART';
+  if (d < len * CLOSED && w > 30 && h > 30) return opts.around && encloses(p, opts.around[0], opts.around[1]) ? 'SHIELD' : 'HEART';
 
   const s = len / (d || 1) < STRAIGHT ? [a, z] : skeleton(p, size, T.eps);
   const corners = s.length - 2;
@@ -142,6 +146,23 @@ export function recognize(raw, opts = {}) {
   }
   if (corners >= 2) return 'LIGHTNING';
   return s[1][1] < (s[0][1] + s[2][1]) / 2 ? 'HAT_UP' : 'HAT_DOWN';
+}
+
+/**
+ * Vòng nét có bao quanh điểm (x, y) không (nét được coi như khép kín).
+ * Nới tay: tâm vòng gần điểm đó (< 45% cỡ vòng) cũng tính, vì vẽ tròn bằng ngón cái hay bị méo.
+ * @param {Pt[]} p
+ */
+export function encloses(p, x, y) {
+  let inside = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const [xi, yi] = p[i], [xj, yj] = p[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  if (inside) return true;
+  let sx = 0, sy = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [a, b] of p) { sx += a; sy += b; minX = Math.min(minX, a); maxX = Math.max(maxX, a); minY = Math.min(minY, b); maxY = Math.max(maxY, b); }
+  return Math.hypot(sx / p.length - x, sy / p.length - y) < 0.45 * Math.max(maxX - minX, maxY - minY);
 }
 
 /**

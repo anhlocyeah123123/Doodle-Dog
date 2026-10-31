@@ -179,6 +179,15 @@ def build_audio(src, man):
     ffmpeg('-i', f'{a}/1.ogg', '-af', f'volume={MUSIC_GAIN}', '-ac', '1', '-b:a', '56k', f'{OUT}/audio/1.mp3')
     for n in ('3', '4', '5'):
         ffmpeg('-i', f'{a}/{n}.ogg', '-ac', '1', '-b:a', '64k', f'{OUT}/audio/{n}.mp3')
+    # Tiếng đòn kết liễu boss: đoạn KHÔNG có giọng nói của file người dùng gửi (raw/outro_snd/src2.mp3).
+    # Ghép 20.85–23.4s (cú đập + ầm rền) với 25.4–31.0s (riser -> tiếng vút -> lắng -> nổ), bỏ 2s ầm rền ở giữa.
+    # Mốc trong file ra: vút 4.55s = bắn phép · nổ 6.05s = trúng boss · hết 7.85s (khớp render/outro.js).
+    ult = f'{src}/outro_snd/src2.mp3'
+    if os.path.exists(ult):
+        ffmpeg('-i', ult, '-filter_complex',
+               '[0]atrim=20.85:23.4,asetpts=PTS-STARTPTS[a];[0]atrim=25.4:31.0,asetpts=PTS-STARTPTS[b];'
+               '[a][b]acrossfade=d=0.3:c1=tri:c2=tri,afade=t=in:d=0.02,afade=t=out:st=7.25:d=0.6,'
+               'pan=mono|c0=0.5*c0+0.5*c1,volume=6.4dB', '-ar', '44100', '-b:a', '80k', f'{OUT}/audio/ult.mp3')
 
 
 def build_font(src, man):

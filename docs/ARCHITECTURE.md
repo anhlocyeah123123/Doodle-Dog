@@ -21,7 +21,7 @@ web/                       <- toàn bộ trang web (xuất bản thẳng lên Ne
    │  └─ assets.js         nạp sprite/ảnh theo manifest + font, tự thử lại khi mạng lỗi
    ├─ game/
    │  ├─ session.js        trạng thái phiên: cutscene → tutorial → intro → play → clear/over/won; sự kiện Sim -> hiệu ứng/âm thanh
-   │  ├─ tutorial.js       màn tập: 8 bước (STEPS), mỗi bước đặt ma + nét mẫu, chờ người chơi làm đúng
+   │  ├─ tutorial.js       màn tập: 10 bước (STEPS), mỗi bước đặt ma + nét mẫu, chờ người chơi làm đúng
    │  └─ effects.js        hạt mực, vòng sóng, tia sét, thông báo, rung (thuần hình ảnh)
    ├─ render/
    │  ├─ view.js           khung nhìn: canvas phủ kín màn hình, thế giới 960x540 ở giữa (bám đáy)
@@ -30,6 +30,7 @@ web/                       <- toàn bộ trang web (xuất bản thẳng lên Ne
    │  ├─ sigil.js          hiệu ứng niệm bùa (4 kiểu, SIGIL_STYLE) + tia quét theo nét vẽ
    │  ├─ cutscene.js       phim mở đầu ~12.5s vẽ bằng canvas từ sprite có sẵn (kịch bản theo mốc giây, CUES = âm thanh)
    │  ├─ guide.js          bàn tay mực vẽ mẫu + băng lời dặn của màn tập
+   │  ├─ outro.js          đoạn kết hạ boss, khớp nhịp assets/audio/ult.mp3: thời gian ngưng → lãnh địa sao → điểm sáng → bắn (sấm) → nổ
    │  └─ cache.js          đệm hình chữ/bong bóng -> không vẽ chữ lại mỗi khung (rất tốn trên máy yếu)
    └─ ui/menu.js           DOM: menu, chọn màn, hướng dẫn, tạm dừng, âm thanh, toàn màn hình
 tests/                     test.js (luật + nhận dạng), balance.js (bot đo độ khó)
@@ -81,3 +82,36 @@ và sau này chạy trên máy chủ/máy chủ phòng khi làm online (cùng se
 - Màn tập dùng chính `Sim` ở chế độ level 0 (`sim.tut`): ma đứng yên, không cắn, không tự qua màn.
 - Sửa kịch bản phim: các mốc giây trong `render/cutscene.js`. Thêm/bớt bước tập: mảng `STEPS` trong `game/tutorial.js`
   (test `npm test` tự đi hết màn tập bằng nét mẫu, nên bước nào có nét mẫu không nhận ra được sẽ báo lỗi).
+
+## Lá chắn + boss màn 4
+
+- Vẽ **vòng kín bao quanh nhân vật** = `SHIELD` (recognizer nhận `around: [CX, CY]`; vòng ở chỗ khác vẫn là tim).
+  Bật 5 giây (`BAL.shieldSec`): hất ma gần ra xa, ma chạm vòng bị đẩy ngược (sự kiện `block`), đồ rơi bị phá. Mỗi màn 1 lần (`sim.shieldUsed`), HUD có biểu tượng còn/đang chắn/đã dùng.
+- Đồ boss ném có **báo trước** `BAL.symWarn` giây (vòng nhấp nháy + "!" trên mặt đất) rồi mới rơi; rơi chậm hơn, thưa hơn.
+- Dãy bùa của boss luôn được kẹp vào trong màn hình (dưới dòng tiêu đề), thấy ngay từ lúc boss xuất hiện.
+- Thông báo (toast) xếp **từ đáy màn hình lên**, tối đa 2 cái: ma bay tới từ phía trên nên không che ký hiệu.
+
+## Boss cuối + đoạn kết
+
+- Boss **lướt vào từ mép phải** (`sim.bossEnter`, tốc độ `BAL.bossEnter`), dừng ở x = W − 140 rồi mới tiến về nhân vật.
+  Sang pha 2 / cắn trúng: lướt vào lại từ mép phải.
+- Hết bùa pha cuối: Sim **giữ boss lại** (`sim.finale`, sự kiện `finale`, `tick()` dừng). Session chuyển sang trạng thái
+  `outro` và vẽ `render/outro.js`; tới `OUTRO_HIT` gọi `sim.finishBoss()` (boss mất, cộng điểm, `won`); tới `OUTRO_DUR`
+  hiện bảng **Bạn đã chiến thắng** (DOM, nền làm mờ bằng `backdrop-filter`) → *Tiếp tục* → **Còn tiếp…** → tự về menu.
+- Trong phim mở đầu và đoạn kết, khung nhìn được mở rộng phủ kín mọi bề rộng màn hình (`fitView(..., free=true)`).
+
+## Bảng thông báo đầu game (ui/menu.js)
+
+1. **Mở trong app** (Zalo, Messenger, Facebook, Instagram, TikTok, LINE, WebView Android): khuyên mở bằng trình duyệt thật.
+   Android có nút *Mở bằng Chrome* (`intent://…;package=com.android.chrome`); iPhone không có cách tự mở Safari nên chỉ hướng dẫn
+   + *Sao chép link*. *Vẫn chơi ở đây* → ghi nhớ trong phiên (`sessionStorage['dd-inapp']`).
+2. **Lần đầu vào trang** (chưa có `localStorage['dd-tut']`): bảng chào → *Bắt đầu* (toàn màn hình + phim mở đầu + màn tập) hoặc *Bỏ qua hướng dẫn*.
+3. **Trước khi vào game**: nếu chưa toàn màn hình, hỏi bật (mỗi lần mở web hỏi 1 lần, `sessionStorage['dd-fs']`). iPhone: hướng dẫn *Thêm vào MH chính*.
+
+### Âm thanh đoạn kết
+
+`web/assets/audio/ult.mp3` (7.9 giây) cắt từ đoạn KHÔNG có giọng nói của file người dùng gửi (`raw/outro_snd/src2.mp3`):
+ghép 20.85–23.4s (cú đập + ầm rền) với 25.4–31.0s (riser → tiếng vút → lắng → nổ), xem `tools/build_assets.py`.
+Mốc hình trong `render/outro.js` (bảng `T`): cú đập 0.15s = thời gian ngưng · riser 2.6–4.45s = sao hội tụ ·
+tiếng vút 4.55s = bắn · tiếng nổ 6.05s = trúng boss · hết 7.85s = bảng chiến thắng. Đổi âm thanh khác thì chỉnh bảng `T`.
+Nhạc nền tạm im trong đoạn kết (`audio.duck`).

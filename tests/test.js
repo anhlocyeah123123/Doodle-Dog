@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { recognize, strokeGeometry } from '../web/src/core/recognizer.js';
 import { Sim } from '../web/src/core/sim.js';
-import { BAL, LAST, LEVELS } from '../web/src/core/config.js';
+import { BAL, LAST, LEVELS, CX, CY } from '../web/src/core/config.js';
 
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log('  ✓', name); };
@@ -111,7 +111,18 @@ test('boss: 2 pha rồi thắng game', () => {
   for (let i = 0; i < 3; i++) s.cast(b.seq[b.i]);
   assert.equal(b.ph, 2); assert.ok(!s.won);
   for (let i = 0; i < 3; i++) s.cast(b.seq[b.i]);
-  s.tick(0.1); assert.ok(s.won);
+  assert.ok(s.finale === b && s.ev.some((e) => e.k === 'finale'), 'hết bùa pha cuối -> chờ đòn kết liễu');
+  s.tick(1); assert.ok(!s.won && s.ghosts[0] === b, 'trong lúc diễn: đứng yên, chưa thắng');
+  s.finishBoss(); assert.ok(s.won && !s.ghosts.length);
+});
+test('boss lướt vào từ mép phải rồi mới tiến về nhân vật', () => {
+  const s = new Sim(5, LAST);
+  s.waves = [{ n: 1, m: 3, v: 1, s: 3, t: 0, boss: true }]; s.nWaves = 1;
+  s.tick(0.01);
+  const b = s.ghosts[0];
+  assert.ok(b.x > 960 && b.ent === 1, 'xuất hiện ngoài mép phải');
+  run(s, 1.5);
+  assert.ok(!b.ent && b.x < 960 && b.vy > 0, 'đã vào màn, bay về phía nhân vật');
 });
 test('boss thả ký tự rơi, chạm để phá', () => {
   const s = new Sim(5, LAST);
@@ -169,6 +180,48 @@ test('vẽ chỗ không có ma -> vẫn đánh con gần nhân vật nhất', ()
   assert.deepEqual(s.ghosts.map((g) => g.id), [1]);
   assert.ok(s.ev.some((e) => e.k === 'area' && e.fb));
 });
+test('sét trúng cùng lúc boss (bùa cuối) và ma khác: boss vẫn được giữ cho đòn kết liễu', () => {
+  const s = new Sim(5, LAST);
+  s.waves = [];
+  const b = { ...ghost(1, 600, 200, 'HORIZONTAL'), boss: true, sz: 3, ph: 2 };
+  s.ghosts = [b, ghost(2, 300, 200, 'VERTICAL'), ghost(3, 700, 260, 'DIAGONAL')];
+  s.cast('LIGHTNING');
+  assert.equal(s.finale, b); assert.deepEqual(s.ghosts, [b]);
+});
+console.log('Lá chắn');
+const ring = (cx, cy, r) => Array.from({ length: 48 }, (_, i) => [cx + r * Math.cos((i / 47) * 6.28), cy + r * Math.sin((i / 47) * 6.28)]);
+test('vòng tròn QUANH nhân vật = lá chắn; vòng ở chỗ khác vẫn là tim', () => {
+  assert.equal(recognize(ring(CX, CY, 130), { around: [CX, CY] }), 'SHIELD');
+  assert.equal(recognize(ring(CX + 20, CY - 30, 100), { around: [CX, CY], touch: true }), 'SHIELD');
+  assert.equal(recognize(ring(CX + 250, 180, 60), { around: [CX, CY] }), 'HEART');
+});
+test('lá chắn: hất ma ra, không cho cắn, phá đồ rơi; mỗi màn 1 lần', () => {
+  const s = new Sim(3, 1);
+  s.waves = [];
+  s.ghosts = [ghost(1, CX + 90, CY - 60, 'HORIZONTAL'), ghost(2, CX - 400, CY - 200, 'VERTICAL')];
+  for (const g of s.ghosts) s.aim(g, 120);
+  s.syms.push({ x: CX, y: 100, vy: 115, ch: '🎃', w: 0 });
+  const near0 = Math.hypot(s.ghosts[0].x - CX, s.ghosts[0].y - CY);
+  assert.equal(s.cast('SHIELD'), true);
+  assert.ok(Math.hypot(s.ghosts[0].x - CX, s.ghosts[0].y - CY) > near0 + 100, 'ma gần bị hất ra');
+  assert.equal(s.syms.length, 0, 'đồ rơi bị phá');
+  const hp = s.hp;
+  run(s, BAL.shieldSec - 0.2);
+  assert.equal(s.hp, hp, 'trong lúc chắn không mất máu');
+  assert.ok(s.ev.some((e) => e.k === 'block'));
+  assert.equal(s.cast('SHIELD'), false, 'lần 2 trong cùng màn không dùng được');
+  assert.equal(new Sim(3, 1).shieldUsed, false, 'màn mới được dùng lại');
+});
+test('đồ boss rơi có báo trước: chưa rơi trong symWarn giây đầu', () => {
+  const s = new Sim(2, LAST);
+  s.waves = []; s.ghosts = [{ ...ghost(9, CX, -70, 'HORIZONTAL'), boss: true, sz: 3 }];
+  run(s, BAL.symEvery + 0.05);
+  assert.equal(s.syms.length, 1);
+  assert.equal(s.syms[0].y, -20, 'đang báo trước, chưa rơi');
+  run(s, BAL.symWarn + 0.2);
+  assert.ok(s.syms[0].y > -20, 'hết báo trước thì rơi');
+});
+
 console.log('Màn tập');
 {
   const { Tutorial, STEPS } = await import('../web/src/game/tutorial.js');
@@ -184,7 +237,7 @@ console.log('Màn tập');
     const d = tut.demo();
     if (!d) continue;
     if (d.tap) { sim.pop(d.tap[0], d.tap[1]); continue; }
-    const pts = dense(d.path), s = recognize(pts);
+    const pts = dense(d.path), s = recognize(pts, { around: [CX, CY] });
     assert.ok(s, `bước ${tut.i + 1}: nét mẫu phải nhận ra được`);
     sim.cast(s, strokeGeometry(pts));
     tut.tried();
