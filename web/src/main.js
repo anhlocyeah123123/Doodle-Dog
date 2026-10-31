@@ -15,6 +15,7 @@ import { setupUI, setBackground } from './ui/menu.js';
 
 const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById('c'));
 const safe = /** @type {HTMLElement} */ (document.getElementById('safe'));   // vùng an toàn (trừ tai thỏ, thanh vuốt)
+const stageEl = /** @type {HTMLElement} */ (document.getElementById('stage'));  // cả màn hình
 const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
 
 // ---- chất lượng hình ảnh: tự hạ bậc khi máy đuối ----
@@ -41,9 +42,15 @@ function applyQuality() {
 function layout() {
   const r = safe.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
-  fitView(r.width, r.height, session?.state === 'cutscene' || session?.state === 'outro');   // phim: phủ kín cả màn rất rộng
-  canvas.style.width = `${VIEW.w * VIEW.s}px`;
-  canvas.style.height = `${VIEW.h * VIEW.s}px`;
+  // Phim mở đầu / đoạn kết: canvas phủ CẢ màn hình (kể cả tai thỏ, thanh Home) để nền đen / trời sao kín mép.
+  const cinema = session?.state === 'cutscene' || session?.state === 'outro';
+  const st = stageEl.getBoundingClientRect();
+  fitView(r.width, r.height, cinema ? { dx: st.left - r.left, dy: st.top - r.top, w: st.width, h: st.height } : null);
+  const cw = VIEW.w * VIEW.s, ch = VIEW.h * VIEW.s;
+  canvas.style.width = `${cw}px`;
+  canvas.style.height = `${ch}px`;
+  canvas.style.left = `${cinema ? st.left - r.left : (r.width - cw) / 2}px`;
+  canvas.style.top = `${cinema ? st.top - r.top : (r.height - ch) / 2}px`;
   applyQuality();
 }
 

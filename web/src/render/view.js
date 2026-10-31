@@ -13,21 +13,30 @@ const MAX_H = 720;
 export const VIEW = { w: W, h: H, ox: 0, oy: 0, s: 1 };
 
 /**
- * Tính khung nhìn cho vùng hiển thị cssW x cssH (pixel CSS).
- * free = bỏ giới hạn bề rộng (phim mở đầu: không có ma lộ ra lúc xuất hiện, cần khung phim phủ kín).
+ * Tính khung nhìn cho vùng an toàn cssW x cssH (pixel CSS, đã trừ tai thỏ / thanh Home).
+ * full: cả màn hình, tính theo góc trên-trái vùng an toàn ({dx, dy, w, h}). Có full (phim mở đầu, đoạn kết):
+ *   canvas phủ KÍN cả màn hình kể cả tai thỏ, nhưng thế giới vẫn nằm ĐÚNG chỗ và đúng cỡ như lúc chơi
+ *   (cùng s, cùng vị trí) -> chuyển cảnh không bị giật, chỉ phần nền đen/trời sao lan ra tới mép.
+ * @param {{dx:number, dy:number, w:number, h:number}|null} [full]
  */
-export function fitView(cssW, cssH, free = false) {
+export function fitView(cssW, cssH, full = null) {
   const s = Math.max(0.01, Math.min(cssW / W, cssH / H));
+  const w0 = Math.min(cssW / s, MAX_W), h0 = Math.min(cssH / s, MAX_H);
   VIEW.s = s;
-  VIEW.w = free ? cssW / s : Math.min(cssW / s, MAX_W);
-  VIEW.h = free ? cssH / s : Math.min(cssH / s, MAX_H);
-  VIEW.ox = (VIEW.w - W) / 2;
-  VIEW.oy = VIEW.h - H;
+  if (!full) {
+    VIEW.w = w0; VIEW.h = h0;
+    VIEW.ox = (w0 - W) / 2; VIEW.oy = h0 - H;
+    return VIEW;
+  }
+  // gốc thế giới (pixel CSS, tính từ góc vùng an toàn) giống hệt lúc chơi: canvas căn giữa vùng an toàn, thế giới bám đáy
+  const wx = (cssW - w0 * s) / 2 + ((w0 - W) / 2) * s, wy = (cssH - h0 * s) / 2 + (h0 - H) * s;
+  VIEW.w = full.w / s; VIEW.h = full.h / s;
+  VIEW.ox = (wx - full.dx) / s; VIEW.oy = (wy - full.dy) / s;
   return VIEW;
 }
 
-/** Mép khung nhìn tính theo tọa độ thế giới (để tia bùa quét tới tận mép màn hình). */
-export const edges = () => ({ l: -VIEW.ox, r: W + VIEW.ox, t: -VIEW.oy, b: H });
+/** Mép khung nhìn tính theo tọa độ thế giới (để tia bùa / lãnh địa phủ tới tận mép màn hình). */
+export const edges = () => ({ l: -VIEW.ox, r: VIEW.w - VIEW.ox, t: -VIEW.oy, b: VIEW.h - VIEW.oy });
 
 /**
  * Hệ số phóng chữ/HUD trên màn thấp: điện thoại ngang còn thanh Safari chỉ cao ~270px, thế giới bị thu còn ½

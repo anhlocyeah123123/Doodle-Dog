@@ -86,26 +86,6 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
       <div class="tbc" hidden>Còn tiếp<span>.</span><span>.</span><span>.</span></div>
     </section>
 
-    <!-- mở link trong Zalo / Messenger / Facebook...: khuyên mở bằng trình duyệt thật -->
-    <section id="inapp" class="sheet" hidden>
-      <div class="card narrow">
-        <h2>Mở bằng trình duyệt nhé!</h2>
-        <p class="hint">Bạn đang mở game trong <b id="iaName">ứng dụng</b>. Trình duyệt trong app hay <b>tắt tiếng</b>, <b>không cho toàn màn hình</b> và dễ giật.</p>
-        <ol class="steps">
-          <li class="ios-only">Bấm nút <b>⋯</b> hoặc biểu tượng <b>la bàn / ↗</b> ở góc màn hình → chọn <b>Mở bằng Safari</b> (hoặc <i>Mở trong trình duyệt</i>).</li>
-          <li class="and-only">Bấm <b>Mở bằng Chrome</b> bên dưới. Không được thì bấm <b>⋯</b> ở góc → <b>Mở bằng trình duyệt</b>.</li>
-          <li class="other-only">Bấm <b>⋯</b> ở góc màn hình → <b>Mở bằng trình duyệt</b>.</li>
-          <li>Hoặc <b>sao chép link</b> rồi dán vào Safari / Chrome.</li>
-        </ol>
-        <input id="iaLink" readonly aria-label="Link trò chơi">
-        <div class="row">
-          <button id="iaChrome" class="big and-only">Mở bằng Chrome</button>
-          <button id="iaCopy">📋 Sao chép link</button>
-          <button id="iaStay">Vẫn chơi ở đây</button>
-        </div>
-      </div>
-    </section>
-
     <!-- lần đầu vào trang: mời xem phim mở đầu + màn tập (bỏ qua được) -->
     <section id="welcome" class="sheet" hidden>
       <div class="card narrow">
@@ -120,22 +100,10 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
       </div>
     </section>
 
-    <!-- trước khi vào game: nhắc bật toàn màn hình (mỗi lần mở web hỏi 1 lần) -->
-    <section id="fsAsk" class="sheet" hidden>
-      <div class="card narrow">
-        <h2>Chơi toàn màn hình nhé?</h2>
-        <p class="hint fs-yes">Bật <b>toàn màn hình</b> để có trải nghiệm tốt nhất: rộng hơn, không bị thanh địa chỉ che.</p>
-        <p class="hint ios-only">Safari không tự bật được. Bấm <b>Chia sẻ → Thêm vào MH chính</b> rồi mở game từ màn hình chính, hoặc <b>aA → Ẩn thanh công cụ</b>.</p>
-        <div class="row">
-          <button id="fsYes" class="big fs-yes">⛶ Toàn màn hình & chơi</button>
-          <button id="fsNo"><span class="fs-yes">Chơi luôn</span><span class="no-fs">Đã hiểu, chơi thôi</span></button>
-        </div>
-      </div>
-    </section>
-
     <section id="fsTip" class="sheet" hidden>
       <div class="card narrow">
         <h2>Chơi toàn màn hình</h2>
+        <p class="hint auto-only">Thanh địa chỉ của Safari đang chiếm một phần màn hình, game bị nhỏ lại.</p>
         <p class="hint">Safari trên iPhone không cho trang web tự bật toàn màn hình. Có 2 cách:</p>
         <ol class="steps">
           <li><b>Đẹp nhất:</b> bấm nút <b>Chia sẻ</b>
@@ -145,7 +113,10 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>)
             bên trái thanh địa chỉ → <b>Ẩn thanh công cụ</b>.</li>
         </ol>
-        <button class="close big">Đã hiểu</button>
+        <div class="row">
+          <button class="close big">Đã hiểu</button>
+          <button class="never auto-only">Không nhắc lại</button>
+        </div>
       </div>
     </section>
 
@@ -166,7 +137,31 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
 
 <div id="rotate" aria-live="polite">
   <div class="phone"></div>
-  <p>Xoay ngang điện thoại để chơi</p>
+  <p class="rt">Xoay ngang điện thoại để chơi</p>
+
+  <!-- mở trong Zalo / Messenger...: app thường KHÔNG cho xoay ngang -> nói thẳng ở đây -->
+  <div class="rbox inapp-only">
+    <p><b>Bạn đang mở trong <span class="iaName">ứng dụng</span>.</b> Trình duyệt trong app này thường <b>không xoay ngang được</b> và hay tắt tiếng.</p>
+    <p class="ios-only">Bấm nút <b>⋯</b> hoặc <b>la bàn / ↗</b> ở góc màn hình → <b>Mở bằng Safari</b>.</p>
+    <p class="and-only">Bấm <b>Mở bằng Chrome</b> bên dưới, hoặc <b>⋯</b> → <b>Mở bằng trình duyệt</b>.</p>
+    <p class="other-only">Bấm <b>⋯</b> ở góc màn hình → <b>Mở bằng trình duyệt</b>.</p>
+    <div class="row">
+      <button class="iaChrome and-only">Mở bằng Chrome</button>
+      <button class="iaCopy">📋 Sao chép link</button>
+    </div>
+    <input class="iaLink" readonly aria-label="Link trò chơi" hidden>
+  </div>
+
+  <!-- trình duyệt thật: mẹo để có trải nghiệm tốt nhất, hiện ngay từ lúc còn cầm dọc -->
+  <div class="rbox best">
+    <p><b>Để có trải nghiệm tốt nhất:</b></p>
+    <p class="ios-only">Bấm <b>Chia sẻ</b>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 11v9h14v-9"/></svg>
+      → <b>Thêm vào MH chính</b>, rồi mở game từ màn hình chính: chơi <b>toàn màn hình</b> như ứng dụng.</p>
+    <p class="ios-only">Hoặc nhanh hơn: xoay ngang rồi bấm <b>aA</b> bên trái thanh địa chỉ → <b>Ẩn thanh công cụ</b>.</p>
+    <p class="fs-yes">Bật <b>toàn màn hình</b>: game rộng hơn, không bị thanh địa chỉ che.</p>
+    <button id="rFs" class="big fs-yes">⛶ Toàn màn hình & xoay ngang</button>
+  </div>
 </div>
 
 <noscript>Trò chơi cần bật JavaScript.</noscript>

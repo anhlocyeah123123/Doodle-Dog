@@ -51,20 +51,43 @@ export function bindStroke(canvas, onStroke) {
 }
 
 /**
- * "Khóa" trang khi đang chơi: không cuộn, không kéo-để-tải-lại, không phóng to bằng 2 ngón / chạm đúp,
+ * "Khóa" trang: không cuộn, không kéo-để-tải-lại, không phóng to bằng 2 ngón / chạm đúp,
  * không bật kính lúp chọn chữ trên iPhone. Chỉ chừa các bảng có thanh cuộn (.card).
  * iOS Safari bỏ qua user-scalable=no trong thẻ viewport, nên phải chặn bằng JS.
+ * Lưới an toàn: nếu trang LỠ bị phóng to (vd chạm đúp quá nhanh), cho phép 2 ngón thu nhỏ lại
+ * và tự đưa về cỡ chuẩn sau giây lát — không bao giờ kẹt ở trạng thái phóng to.
  */
 export function lockPage() {
+  const vv = window.visualViewport;
+  const zoomed = () => (vv?.scale ?? 1) > 1.01;
   const scrollable = (t) => t instanceof Element && !!t.closest('.card');
-  const block = (e) => { if (e.cancelable && !scrollable(e.target)) e.preventDefault(); };
+  const block = (e) => { if (e.cancelable && !zoomed() && !scrollable(e.target)) e.preventDefault(); };
   document.addEventListener('touchmove', block, { passive: false });
   document.addEventListener('touchstart', (e) => { if (e.touches.length > 1) block(e); }, { passive: false });
-  for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, (e) => e.preventDefault(), { passive: false });
-  let lastEnd = 0;   // chạm đúp nhanh -> iOS phóng to; chặn lần chạm thứ 2 nếu không trúng nút
+  for (const g of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(g, (e) => { if (!zoomed()) e.preventDefault(); }, { passive: false });
+
+  // Chạm đúp nhanh -> iOS phóng to. Chặn lần chạm thứ 2 ở MỌI chỗ (kể cả nút).
+  // Nếu lần 2 trúng một nút KHÁC nút vừa bấm thì tự bấm hộ (không mất thao tác); cùng nút thì bỏ (tránh bật/tắt 2 lần).
+  let lastEnd = 0, lastBtn = /** @type {Element|null} */ (null);
   document.addEventListener('touchend', (e) => {
-    const now = e.timeStamp;
-    if (now - lastEnd < 320 && e.cancelable && !(e.target instanceof Element && e.target.closest('button'))) e.preventDefault();
-    lastEnd = now;
+    if (e.touches.length) return;
+    const btn = e.target instanceof Element ? e.target.closest('button') : null;
+    if (e.timeStamp - lastEnd < 350 && e.cancelable && !zoomed()) {
+      e.preventDefault();
+      if (btn && btn !== lastBtn && !(/** @type {HTMLButtonElement} */ (btn).disabled)) /** @type {HTMLElement} */ (btn).click();
+    }
+    lastEnd = e.timeStamp; lastBtn = btn;
   }, { passive: false });
+
+  // Lỡ bị phóng to: đặt lại thẻ viewport -> iOS tự thu về cỡ chuẩn.
+  const meta = document.querySelector('meta[name=viewport]');
+  const base = meta?.getAttribute('content') || '';
+  let timer = 0;
+  const resetZoom = () => {
+    if (!meta || !zoomed()) return;
+    meta.setAttribute('content', base + ',minimum-scale=1');
+    requestAnimationFrame(() => meta.setAttribute('content', base));
+  };
+  vv?.addEventListener('resize', () => { clearTimeout(timer); timer = window.setTimeout(resetZoom, 700); });
+  window.addEventListener('orientationchange', () => window.setTimeout(resetZoom, 300));
 }

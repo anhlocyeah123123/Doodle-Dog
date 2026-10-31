@@ -72,8 +72,13 @@ export function setupUI(actions) {
   const refreshMute = () => {
     for (const b of document.querySelectorAll('.mute')) b.textContent = audio.muted ? '🔇' : '🔊';
   };
+  let muteAt = -1e9;
   for (const b of document.querySelectorAll('.mute')) {
-    b.addEventListener('click', () => { audio.unlock(); audio.toggle(); refreshMute(); });
+    b.addEventListener('click', () => {
+      if (performance.now() - muteAt < 400) return;   // chạm đúp: chỉ tính 1 lần
+      muteAt = performance.now();
+      audio.unlock(); audio.toggle(); refreshMute();
+    });
   }
   refreshMute();
 
@@ -84,7 +89,33 @@ export function setupUI(actions) {
     else { fsFrom = pause.hidden ? null : pause; pause.hidden = true; fsTip.hidden = false; }
   };
   let fsFrom = /** @type {HTMLElement|null} */ (null);
-  fsTip.querySelector('.close')?.addEventListener('click', () => { fsTip.hidden = true; if (fsFrom) fsFrom.hidden = false; });
+  const closeFsTip = () => {
+    fsTip.hidden = true;
+    if (fsFrom) fsFrom.hidden = false;
+    if (fsTip.classList.contains('auto')) { fsTip.classList.remove('auto'); maybeWelcome(); }
+  };
+  fsTip.querySelector('.close')?.addEventListener('click', closeFsTip);
+  fsTip.querySelector('.never')?.addEventListener('click', () => { try { localStorage.setItem('dd-iostip', 'off'); } catch { /* bỏ qua */ } closeFsTip(); });
+
+  /**
+   * iPhone Safari ĐÃ cầm ngang mà thanh địa chỉ vẫn chiếm chỗ (người mở trang khi máy đang ngang không thấy mẹo ở màn xoay dọc):
+   * tự mở bảng hướng dẫn toàn màn hình, mỗi lần mở web 1 lần, có "Không nhắc lại".
+   * iOS luôn báo screen.width là cạnh NGẮN -> lúc ngang, innerHeight gần bằng nó nghĩa là thanh công cụ đã ẩn.
+   */
+  const iPhoneSafari = /iPhone|iPod/.test(navigator.userAgent) && !IN_APP && !standalone;
+  const maybeIosTip = () => {
+    let off = false;
+    try { off = localStorage.getItem('dd-iostip') === 'off'; } catch { /* bỏ qua */ }
+    const landscape = innerWidth > innerHeight, barsHidden = innerHeight >= Math.min(screen.width, screen.height) - 30;
+    if (!iPhoneSafari || off || !landscape || barsHidden || ss.get('dd-iostip') || menu.hidden || !fsTip.hidden || !welcome.hidden) return false;
+    ss.set('dd-iostip', '1');
+    fsFrom = null;
+    fsTip.classList.add('auto');
+    fsTip.hidden = false;
+    return true;
+  };
+  // vừa xoay từ dọc sang ngang ở menu -> nhắc (chờ Safari co giãn thanh địa chỉ xong)
+  matchMedia('(orientation: landscape)').addEventListener?.('change', (e) => { if (e.matches) setTimeout(maybeIosTip, 600); });
   for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.fs'))) {
     b.hidden = standalone;
     b.addEventListener('click', toggleFs);
@@ -99,26 +130,22 @@ export function setupUI(actions) {
   };
 
   if (canFullscreen && !standalone) document.documentElement.classList.add('fs-ok');
-  const welcome = $('welcome'), fsAsk = $('fsAsk'), inapp = $('inapp');
+  const welcome = $('welcome');
+  if (IN_APP) document.documentElement.classList.add('inapp');
+  if (standalone) document.documentElement.classList.add('standalone');
 
   /** @param {number} level 0 = phim mở đầu + màn tập */
   const begin = (level) => {
     audio.unlock();   // phải nằm trong sự kiện chạm để iOS cho phát tiếng
-    if (ss.get('dd-fs') === 'on') enterFullscreen();
-    menu.hidden = true; help.hidden = true; pause.hidden = true; welcome.hidden = true; fsAsk.hidden = true;
+    if (isTouch && ss.get('dd-fs') !== 'off') enterFullscreen();   // Android: toàn màn hình + khóa ngang (iPhone không có API)
+    menu.hidden = true; help.hidden = true; pause.hidden = true; welcome.hidden = true;
     hud.hidden = false;
     actions.setPaused(false);
     if (level === 0) actions.story(); else actions.start(level);
   };
-  /** Trước khi vào game: nhắc bật toàn màn hình (mỗi lần mở web hỏi 1 lần, đã kín màn hình thì thôi). */
-  let pending = 1;
-  const play = (level) => {
-    if (standalone || document.fullscreenElement || ss.get('dd-fs')) { begin(level); return; }
-    pending = level;
-    fsAsk.hidden = false;
-  };
-  $('fsYes').addEventListener('click', () => { ss.set('dd-fs', 'on'); begin(pending); });
-  $('fsNo').addEventListener('click', () => { ss.set('dd-fs', 'off'); begin(pending); });
+  const play = (level) => begin(level);
+  // Màn xoay ngang (điện thoại cầm dọc): nút toàn màn hình -> Android tự xoay ngang nhờ khóa hướng màn hình.
+  $('rFs').addEventListener('click', () => { ss.set('dd-fs', 'on'); audio.unlock(); enterFullscreen(); });
 
   // Lần đầu chơi: phim mở đầu -> màn tập -> màn 1. Đã học rồi: vào thẳng màn 1.
   $('play').addEventListener('click', () => play(tutorialSeen.get() ? 1 : 0));
@@ -127,22 +154,24 @@ export function setupUI(actions) {
   // Bảng chào lần đầu vào trang: Bắt đầu (kèm toàn màn hình) hoặc bỏ qua hướng dẫn.
   $('wStart').addEventListener('click', () => { ss.set('dd-fs', canFullscreen ? 'on' : 'off'); begin(0); });
   $('wSkip').addEventListener('click', () => { tutorialSeen.set(); welcome.hidden = true; });
-  const maybeWelcome = () => { if (!tutorialSeen.get() && menu.hidden === false) welcome.hidden = false; };
+  function maybeWelcome() { if (!tutorialSeen.get() && menu.hidden === false && fsTip.hidden) welcome.hidden = false; }
 
-  // Mở trong Zalo / Messenger...: khuyên mở bằng trình duyệt thật.
-  const link = /** @type {HTMLInputElement} */ ($('iaLink'));
-  link.value = location.href.replace(/[?&]debug\b/, '');
-  $('iaName').textContent = IN_APP || 'ứng dụng';
-  $('iaChrome').addEventListener('click', () => {
-    location.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(location.href)};end`;
+  // Mở trong Zalo / Messenger...: cảnh báo nằm ngay trên màn xoay ngang (app thường không cho xoay).
+  const href = location.href.replace(/[?&]debug\b/, '');
+  for (const el of document.querySelectorAll('.iaName')) el.textContent = IN_APP || 'ứng dụng';
+  for (const b of document.querySelectorAll('.iaChrome')) b.addEventListener('click', () => {
+    location.href = `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
   });
-  $('iaCopy').addEventListener('click', async () => {
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.iaCopy'))) b.addEventListener('click', async () => {
     let ok = false;
-    try { await navigator.clipboard.writeText(link.value); ok = true; } catch { /* app chặn clipboard */ }
-    if (!ok) { link.focus(); link.select(); link.setSelectionRange(0, 9999); try { ok = document.execCommand('copy'); } catch { /* bỏ qua */ } }
-    $('iaCopy').textContent = ok ? '✓ Đã chép link' : 'Giữ ngón tay lên link để chép';
+    try { await navigator.clipboard.writeText(href); ok = true; } catch { /* app chặn clipboard */ }
+    const box = /** @type {HTMLInputElement|null} */ (b.closest('.rbox')?.querySelector('.iaLink') ?? null);
+    if (!ok && box) {   // dự phòng: hiện ô link, chọn sẵn để người dùng tự chép
+      box.hidden = false; box.value = href; box.focus(); box.select(); box.setSelectionRange(0, 9999);
+      try { ok = document.execCommand('copy'); } catch { /* bỏ qua */ }
+    }
+    b.textContent = ok ? '✓ Đã chép link' : 'Giữ ngón tay lên link để chép';
   });
-  $('iaStay').addEventListener('click', () => { ss.set('dd-inapp', '1'); inapp.hidden = true; maybeWelcome(); });
   $('skip').addEventListener('click', () => actions.skip());
   $('lv').addEventListener('click', (e) => {
     const l = Number(/** @type {HTMLElement} */ (e.target).closest?.('button')?.dataset.l);
@@ -214,8 +243,7 @@ export function setupUI(actions) {
     setSkippable(on) { $('skip').hidden = !on; },
     /** @param {import('../engine/assets.js').Assets} A */
     ready(A) {
-      if (IN_APP && !ss.get('dd-inapp')) inapp.hidden = false;   // ưu tiên: báo mở bằng trình duyệt trước
-      else maybeWelcome();
+      if (!maybeIosTip()) maybeWelcome();   // iPhone cầm ngang: nhắc toàn màn hình trước, xong mới tới bảng chào
       cssSprite($('mdog'), A, 'idle');
       cssSprite($('mg1'), A, 'ghost');
       cssSprite($('mg2'), A, 'ghost');

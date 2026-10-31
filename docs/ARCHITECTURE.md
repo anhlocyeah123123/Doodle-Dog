@@ -100,13 +100,19 @@ và sau này chạy trên máy chủ/máy chủ phòng khi làm online (cùng se
   hiện bảng **Bạn đã chiến thắng** (DOM, nền làm mờ bằng `backdrop-filter`) → *Tiếp tục* → **Còn tiếp…** → tự về menu.
 - Trong phim mở đầu và đoạn kết, khung nhìn được mở rộng phủ kín mọi bề rộng màn hình (`fitView(..., free=true)`).
 
-## Bảng thông báo đầu game (ui/menu.js)
+## Thông báo đầu game (ui/menu.js + màn xoay ngang trong index.html)
 
-1. **Mở trong app** (Zalo, Messenger, Facebook, Instagram, TikTok, LINE, WebView Android): khuyên mở bằng trình duyệt thật.
-   Android có nút *Mở bằng Chrome* (`intent://…;package=com.android.chrome`); iPhone không có cách tự mở Safari nên chỉ hướng dẫn
-   + *Sao chép link*. *Vẫn chơi ở đây* → ghi nhớ trong phiên (`sessionStorage['dd-inapp']`).
-2. **Lần đầu vào trang** (chưa có `localStorage['dd-tut']`): bảng chào → *Bắt đầu* (toàn màn hình + phim mở đầu + màn tập) hoặc *Bỏ qua hướng dẫn*.
-3. **Trước khi vào game**: nếu chưa toàn màn hình, hỏi bật (mỗi lần mở web hỏi 1 lần, `sessionStorage['dd-fs']`). iPhone: hướng dẫn *Thêm vào MH chính*.
+- **Màn xoay ngang** (điện thoại cầm dọc) là nơi duy nhất báo trước khi chơi:
+  - Mở trong app (Zalo, Messenger, Facebook, Instagram, TikTok, LINE, WebView Android → lớp `html.inapp`): app thường KHÔNG cho
+    xoay ngang nên báo ngay tại đây: mở bằng Safari/Chrome (Android có nút *Mở bằng Chrome* qua `intent://`) + *Sao chép link*.
+  - Trình duyệt thật: mẹo *để có trải nghiệm tốt nhất* — iPhone: *Chia sẻ → Thêm vào MH chính*; Android: nút
+    *Toàn màn hình & xoay ngang* (requestFullscreen + khóa hướng ngang → máy tự xoay).
+- **iPhone Safari đang cầm NGANG mà thanh địa chỉ còn chiếm chỗ** (người mở trang khi máy đã ngang không thấy mẹo ở màn dọc):
+  tự mở bảng *Chơi toàn màn hình* (Thêm vào MH chính / aA → Ẩn thanh công cụ), mỗi lần mở web 1 lần, có *Không nhắc lại*
+  (`localStorage['dd-iostip']`). Nhận biết thanh đã ẩn: iOS luôn báo `screen.width` là cạnh ngắn, lúc ngang `innerHeight` ≈ nó.
+- **Lần đầu vào trang** (chưa có `localStorage['dd-tut']`): bảng chào → *Bắt đầu* (phim mở đầu + màn tập) hoặc *Bỏ qua hướng dẫn*.
+- **Chạm đúp / phóng to (iPhone)**: `lockPage()` chặn lần chạm thứ 2 trong 350ms ở mọi chỗ (kể cả nút); nếu trang lỡ bị
+  phóng to thì cho 2 ngón thu nhỏ và tự đặt lại thẻ viewport để về cỡ chuẩn — không bao giờ kẹt.
 
 ### Âm thanh đoạn kết
 

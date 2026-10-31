@@ -3,7 +3,7 @@
 // - Ảnh/font/manifest asset: dùng bản đã lưu ngay, đồng thời tải bản mới ngầm cho lần sau.
 // - Âm thanh: KHÔNG chặn. Safari iPhone phát <audio> bằng yêu cầu Range; trả bản lưu sẵn
 //   (mã 200, không phải 206) sẽ làm iPhone không phát được nhạc.
-const VERSION = 'dd-v10';   // đổi khi muốn xóa toàn bộ cache cũ
+const VERSION = 'dd-v13';   // đổi khi muốn xóa toàn bộ cache cũ
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(

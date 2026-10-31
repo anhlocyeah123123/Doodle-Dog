@@ -101,6 +101,7 @@ export class Session {
   /** Phim mở đầu -> màn tập -> màn 1. */
   startStory() {
     this.sim = null;
+    this.hooks.onTimeStop(false);
     this.tut = null;
     this.fx.reset();
     this.msg = null;
@@ -136,6 +137,7 @@ export class Session {
 
   begin(level, hp = BAL.hp, score = 0) {
     this.outro = null;
+    this.hooks.onTimeStop(false);
     this.hooks.onSkippable(false);
     this.tut = null;
     this.tutEnd = 0;

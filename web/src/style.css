@@ -42,7 +42,7 @@ html, body {
 }
 /* vùng an toàn: canvas căn giữa trong đó, JS đặt kích thước đúng tỉ lệ khung nhìn */
 #safe { position: absolute; top: var(--st); right: var(--sr); bottom: var(--sb); left: var(--sl); }
-canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; touch-action: none; }
+canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; touch-action: none; }   /* JS đặt vị trí + cỡ (main.js layout) */
 
 /* ---------- nút kiểu mực ---------- */
 button {
@@ -259,3 +259,24 @@ html:not(.ios):not(.and) .other-only { display: revert; }
 .vcard h2 { font-size: max(26px, min(calc(var(--u) * 9), 6vw)); }
 .card.vcard { min-width: min(90%, 640px); max-width: min(94%, 780px); }
 .card.vcard h2 { font-size: max(26px, min(calc(var(--u) * 7.5), 5.5vw)); }
+
+/* ---------- màn xoay ngang: thêm cảnh báo trong app + mẹo trải nghiệm tốt nhất ---------- */
+#rotate { overflow: auto; justify-content: center; gap: 14px; }
+#rotate .rt { margin: 0; font-size: 24px; }
+#rotate .rbox {
+  width: min(100%, 420px); padding: 12px 14px; font-size: 16px; line-height: 1.4; text-align: left;
+  background: rgba(255, 255, 255, .1); border: 2px dashed rgba(255, 255, 255, .45); border-radius: 12px;
+}
+#rotate .rbox p { margin: 0 0 6px; }
+#rotate .rbox .row { margin-top: 8px; justify-content: flex-start; }
+#rotate .rbox svg { width: 1.2em; height: 1.2em; vertical-align: -.2em; fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#rotate button { font-size: 17px; }
+#rotate .iaLink { width: 100%; margin-top: 8px; font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 0; -webkit-user-select: text; user-select: text; }
+.inapp-only { display: none !important; }
+.inapp .inapp-only { display: block !important; }
+.inapp #rotate .best, .standalone #rotate .best { display: none; }
+#rotate .best:not(:has(.ios-only, .fs-yes)) { display: none; }
+html:not(.ios):not(.fs-ok) #rotate .best { display: none; }   /* không có mẹo nào áp dụng được */
+#rotate .rbox button { max-width: 100%; white-space: normal; font-size: 17px; padding: 6px 14px; min-height: 44px; }
+
+#fsTip:not(.auto) .auto-only { display: none; }
