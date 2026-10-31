@@ -7,7 +7,8 @@
 //   2 Pháp ấn    – vòng tròn nguệch ngoạc vẽ dần, tia gạch, sao lấp lánh
 //   3 Nét bay    – chính nét người chơi vừa vẽ thu nhỏ bay lên đầu rồi nổ sao
 //   4 Truyện tranh – khung nổ răng cưa kiểu "POW", vạch tốc độ
-import { SIGIL_STYLE, SPELL_COLOR, W, H } from '../core/config.js';
+import { SIGIL_STYLE, SPELL_COLOR } from '../core/config.js';
+import { edges } from './view.js';
 import { INK, ink, inkText } from './ink.js';
 
 const TAU = Math.PI * 2;
@@ -268,8 +269,9 @@ export function drawArea(c, f) {
 
 /** Đổi hình học nét vẽ thành hiệu ứng tia/vùng. */
 export function areaFx(s, g, col, id) {
-  if (s === 'HORIZONTAL') { const r = g.x1 >= g.x0; return { t: 'beam', ax: r ? -20 : W + 20, ay: g.cy, bx: r ? W + 20 : -20, by: g.cy, col, id }; }
-  if (s === 'VERTICAL') { const d = g.y1 >= g.y0; return { t: 'beam', ax: g.cx, ay: d ? -20 : H + 20, bx: g.cx, by: d ? H + 20 : -20, col, id }; }
+  const e = edges();
+  if (s === 'HORIZONTAL') { const r = g.x1 >= g.x0; return { t: 'beam', ax: r ? e.l - 20 : e.r + 20, ay: g.cy, bx: r ? e.r + 20 : e.l - 20, by: g.cy, col, id }; }
+  if (s === 'VERTICAL') { const d = g.y1 >= g.y0; return { t: 'beam', ax: g.cx, ay: d ? e.t - 20 : e.b + 20, bx: g.cx, by: d ? e.b + 20 : e.t - 20, col, id }; }
   if (s === 'DIAGONAL') {
     const dx = g.x1 - g.x0, dy = g.y1 - g.y0, L = Math.hypot(dx, dy) || 1, mx = (g.x0 + g.x1) / 2, my = (g.y0 + g.y1) / 2;
     return { t: 'beam', ax: mx - (dx / L) * 1200, ay: my - (dy / L) * 1200, bx: mx + (dx / L) * 1200, by: my + (dy / L) * 1200, col, id };

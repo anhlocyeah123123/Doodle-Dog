@@ -28,6 +28,33 @@ test('tim / vòng kín', () => {
 });
 test('nét quá ngắn bị bỏ qua', () => assert.equal(recognize(line([0, 0], [20, 0])), null));
 
+// Ngón tay trên điện thoại: rung tay + móc ở đầu/cuối nét + vẽ nhỏ. Bản cũ nhận nhầm gần như mọi nét thẳng.
+let sd = 7; const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647) - 0.5;
+const finger = (poly, amp, scale = 1) => {
+  const P = poly.map(([x, y]) => [x * scale, y * scale]), out = [[P[0][0] - 6, P[0][1] + 4]];
+  let wob = 0;
+  for (let k = 1; k < P.length; k++) {
+    const [ax, ay] = P[k - 1], [bx, by] = P[k], n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 3));
+    for (let i = 0; i < n; i++) { wob = wob * 0.7 + rnd() * amp; out.push([ax + ((bx - ax) * i) / n + rnd() * amp + wob, ay + ((by - ay) * i) / n + rnd() * amp - wob]); }
+  }
+  const z = P[P.length - 1]; out.push(z, [z[0] + 3, z[1] + 6]);
+  return out;
+};
+const SHAPES = {
+  HORIZONTAL: [[0, 0], [200, 0]], VERTICAL: [[0, 0], [0, 200]], DIAGONAL: [[0, 160], [160, 0]],
+  HAT_UP: [[0, 180], [90, 0], [180, 180]], HAT_DOWN: [[0, 0], [90, 180], [180, 0]], LIGHTNING: [[0, 0], [100, 50], [0, 110], [100, 170]],
+};
+test('nét ngón tay rung (cỡ to và nhỏ) vẫn nhận đúng ≥ 97%', () => {
+  for (const [name, poly] of Object.entries(SHAPES)) for (const scale of [1, 0.5]) {
+    let ok = 0;
+    for (let r = 0; r < 100; r++) if (recognize(finger(poly, 4, scale), { touch: true }) === name) ok++;
+    assert.ok(ok >= 97, `${name} cỡ ${scale}: chỉ đúng ${ok}%`);
+  }
+});
+test('nét thẳng rung tay KHÔNG bị nhận thành sét', () => {
+  for (let r = 0; r < 200; r++) assert.notEqual(recognize(finger(SHAPES.HORIZONTAL, 4, 0.5), { touch: true }), 'LIGHTNING');
+});
+
 console.log('Luật game');
 test('đợt 1 xuất hiện đồng thời, không chồng nhau', () => {
   const s = new Sim(5, 1); run(s, 1.05);
@@ -142,4 +169,29 @@ test('vẽ chỗ không có ma -> vẫn đánh con gần nhân vật nhất', ()
   assert.deepEqual(s.ghosts.map((g) => g.id), [1]);
   assert.ok(s.ev.some((e) => e.k === 'area' && e.fb));
 });
+console.log('Màn tập');
+{
+  const { Tutorial, STEPS } = await import('../web/src/game/tutorial.js');
+  const { Effects } = await import('../web/src/game/effects.js').catch(() => ({ Effects: null }));
+  const fx = Effects ? new Effects() : { toast() {} };
+  const sim = new Sim(7, 0), tut = new Tutorial(sim, /** @type {any} */ (fx));
+  const dense = (p) => p.slice(1).flatMap((q, i) => line(p[i], q, 16));
+  let guard = 0;
+  while (!tut.done && guard++ < 5000) {
+    for (let k = 0; k < 30; k++) { sim.tick(1 / 60); tut.observe(sim.ev); sim.ev.length = 0; tut.update(1 / 60, false); }
+    assert.equal(sim.hp >= BAL.hp - 1, true, 'màn tập không được làm mất máu');
+    assert.ok(!sim.cleared && !sim.won && !sim.over);
+    const d = tut.demo();
+    if (!d) continue;
+    if (d.tap) { sim.pop(d.tap[0], d.tap[1]); continue; }
+    const pts = dense(d.path), s = recognize(pts);
+    assert.ok(s, `bước ${tut.i + 1}: nét mẫu phải nhận ra được`);
+    sim.cast(s, strokeGeometry(pts));
+    tut.tried();
+  }
+  assert.ok(tut.done, `kẹt ở bước ${tut.i + 1}/${STEPS.length}`);
+  assert.equal(sim.hp, BAL.hp, 'bước tim phải hồi đủ máu');
+  passed++; console.log(`  ✓ làm theo bàn tay mẫu -> học xong cả ${STEPS.length} bước; ma không cắn, không tự qua màn`);
+}
+
 console.log(`\n${passed} test đạt`);

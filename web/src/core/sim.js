@@ -16,7 +16,7 @@
 //   pop {x, y}                phá ký tự rơi
 //   hit                       nhân vật mất máu
 //   over / clear              thua / qua màn (won = qua màn cuối)
-import { CX, CY, BAL, POOL, LEVELS, LAST, W } from './config.js';
+import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL } from './config.js';
 
 /** @typedef {import('./config.js').Spell} Spell */
 /**
@@ -75,7 +75,9 @@ export class Sim {
 
   /** @param {number} l */
   startLevel(l) {
-    const c = LEVELS[l];
+    const c = l === 0 ? TUTORIAL : LEVELS[l];
+    /** Màn tập: ma không cắn, ký tự rơi không gây sát thương, không tự qua màn, ma tim không tự xuất hiện. */
+    this.tut = l === 0;
     this.level = l;
     this.cfg = c;
     this.t = 0;
@@ -126,7 +128,7 @@ export class Sim {
   spawnHealGhost() {
     const dir = this.r() < 0.5 ? 1 : -1;
     this.ghosts.push({
-      id: this.id++, x: dir > 0 ? -60 : W + 60, y: 130 + this.r() * 70, vx: BAL.healSpeed * dir, vy: 0, sp: BAL.healSpeed,
+      id: this.id++, x: dir > 0 ? -160 : W + 160, y: 130 + this.r() * 70, vx: BAL.healSpeed * dir, vy: 0, sp: BAL.healSpeed,
       seq: ['HEART'], i: 0, sz: 1, boss: false, heal: true, ph: 1,
     });
     this.ev.push({ k: 'healspawn' });
@@ -145,7 +147,7 @@ export class Sim {
     }
 
     // Ma tim CHỈ xuất hiện khi thiếu máu; đếm giờ chỉ chạy khi thiếu máu.
-    if (this.hp < BAL.hp && !this.ghosts.some((g) => g.heal) && (this.healCd -= dt) <= 0) {
+    if (!this.tut && this.hp < BAL.hp && !this.ghosts.some((g) => g.heal) && (this.healCd -= dt) <= 0) {
       this.spawnHealGhost();
       this.healCd = this.cfg.heal;
     }
@@ -155,11 +157,11 @@ export class Sim {
       g.x += g.vx * dt;
       if (g.heal) {   // bay ngang lượn sóng rồi ra khỏi màn, không gây sát thương
         g.y += Math.sin(this.t * 2 + g.id) * 30 * dt;
-        if (g.x < -100 || g.x > W + 100) this.ghosts.splice(i, 1);
+        if (g.x < -200 || g.x > W + 200) this.ghosts.splice(i, 1);   // ±200: màn rộng nhìn thêm tới 120 mỗi bên
         continue;
       }
       g.y += g.vy * dt;
-      if (distToDog(g) < BAL.hitR * Math.pow(g.sz, 0.7)) {
+      if (!this.tut && distToDog(g) < BAL.hitR * Math.pow(g.sz, 0.7)) {
         this.damage(g.boss ? 2 : 1);
         if (g.boss) { g.x = CX; g.y = -70; this.aim(g, g.sp); }   // boss cắn xong bay lên lại
         else this.ghosts.splice(i, 1);
@@ -174,7 +176,7 @@ export class Sim {
       const s = this.syms[i];
       s.y += s.vy * dt;
       if (s.y > CY - 20) {
-        if (Math.abs(s.x - CX) < BAL.symHitR) this.damage(1);
+        if (!this.tut && Math.abs(s.x - CX) < BAL.symHitR) this.damage(1);
         this.syms.splice(i, 1);
       }
     }
@@ -182,7 +184,7 @@ export class Sim {
     if (this.hp <= 0) {
       this.over = true;
       this.ev.push({ k: 'over' });
-    } else if (!this.waves.length && !this.ghosts.some((g) => !g.heal)) {
+    } else if (!this.tut && !this.waves.length && !this.ghosts.some((g) => !g.heal)) {
       this.ghosts = [];
       this.syms = [];
       if (this.level === LAST) this.won = true; else this.cleared = true;
@@ -261,6 +263,21 @@ export class Sim {
     this.score += pts;
     this.ev.push({ k: 'kill', x, y, s, boss: g.boss, pts });
   }
+
+  /**
+   * Màn tập: đặt 1 con ma đứng yên tại (x, y).
+   * @param {number} x @param {number} y @param {Spell[]} seq @param {boolean} [heal]
+   * @returns {Ghost}
+   */
+  place(x, y, seq, heal = false) {
+    /** @type {Ghost} */
+    const g = { id: this.id++, x, y, vx: 0, vy: 0, sp: 0, seq, i: 0, sz: 1, boss: false, heal, ph: 1 };
+    this.ghosts.push(g);
+    return g;
+  }
+
+  /** Màn tập: thả 1 ký tự rơi chậm tại x, bắt đầu từ độ cao y. */
+  drop(x, vy = 45, y = -20) { this.syms.push({ x, y, vy, ch: '🎃' }); }
 
   /** @param {Ghost} g */
   remove(g) { this.ghosts.splice(this.ghosts.indexOf(g), 1); }

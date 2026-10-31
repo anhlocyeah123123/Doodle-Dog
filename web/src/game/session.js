@@ -1,6 +1,7 @@
 // @ts-check
 // Một phiên chơi: điều phối trạng thái màn, nối Sim (luật) với hiệu ứng, âm thanh và animation nhân vật.
 //
+//   cutscene (phim mở đầu) ──> tutorial (màn tập) ──> intro màn 1     [lần đầu chơi, bỏ qua được]
 //   intro ──(chạy vào giữa)──> play ──┬─ qua màn ──> clear ──(chạm)──> intro màn sau
 //                                     ├─ hết máu ──> over  ──(chạm)──> intro màn đó
 //                                     └─ hạ boss ──> won   ──(chạm)──> về menu
@@ -11,6 +12,8 @@ import { Effects } from './effects.js';
 import { audio } from '../engine/audio.js';
 import { bolt } from '../render/ink.js';
 import { areaFx } from '../render/sigil.js';
+import { CUES, DURATION } from '../render/cutscene.js';
+import { Tutorial } from './tutorial.js';
 
 const SIGIL_Y = GY - 190;   // trận pháp nổi trên đầu nhân vật
 const SIGIL_RATE = 1.25;    // ~0.8 giây
@@ -25,6 +28,22 @@ const thin = (pts) => {
   return pts.filter((_, i) => i % step === 0 || i === pts.length - 1).map((p) => [p[0], p[1]]);
 };
 
+/** Đã xem phim mở đầu + học xong màn tập chưa (lần sau bấm "Chơi ngay" vào thẳng màn 1). */
+export const tutorialSeen = {
+  get() { try { return localStorage.getItem('dd-tut') === '1'; } catch { return false; } },
+  set() { try { localStorage.setItem('dd-tut', '1'); } catch { /* bỏ qua */ } },
+};
+
+/** Âm thanh cho các mốc trong phim mở đầu (render/cutscene.js -> CUES). */
+const CUE_SOUND = {
+  thunder: () => audio.sfx('4', 0.8, 0.5),
+  whoosh: () => audio.sfx('3', 0.35, 0.55),
+  grab: () => audio.sfx('5', 1, 0.8),
+  laugh: () => audio.arp([2, 1.68, 2, 1.68], 0.35),
+  angry: () => audio.sfx('4', 0.5, 1.3),
+  title: () => audio.arp([1, 1.26, 1.5, 2]),
+};
+
 export const progress = {
   get() { try { return Number(localStorage.getItem('dd-lv')) || 1; } catch { return 1; } },
   set(l) { try { if (l > this.get()) localStorage.setItem('dd-lv', String(Math.min(l, LAST))); } catch { /* bỏ qua */ } },
@@ -33,8 +52,8 @@ export const progress = {
 export class Session {
   /**
    * @param {import('../engine/assets.js').Assets} A
-   * @param {{pts:number[][], down:boolean, fade:number}} trail
-   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void}} hooks
+   * @param {{pts:number[][], down:boolean, fade:number, touch:boolean}} trail
+   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void, onSkippable:(on:boolean)=>void}} hooks
    */
   constructor(A, trail, hooks) {
     this.A = A;
@@ -50,9 +69,52 @@ export class Session {
     this.overlayT = 0;
     this.missT = 0;
     /** @type {{a:string,b:string}|null} */ this.msg = null;
+    /** @type {Tutorial|null} */ this.tut = null;
+    this.cutT = 0;     // thời gian trong phim mở đầu
+    this.cueI = 0;     // mốc âm thanh tiếp theo
+    this.tutEnd = 0;   // đếm ngược từ lúc học xong tới màn 1
+  }
+
+  /** Phim mở đầu -> màn tập -> màn 1. */
+  startStory() {
+    this.sim = null;
+    this.tut = null;
+    this.fx.reset();
+    this.msg = null;
+    this.state = 'cutscene';
+    this.cutT = 0; this.cueI = 0;
+    this.hooks.onBackground('bg1');
+    this.hooks.onSkippable(true);
+  }
+
+  startTutorial() {
+    this.sim = new Sim(7, 0);
+    this.fx.reset();
+    this.tut = new Tutorial(this.sim, this.fx);
+    this.msg = null;
+    this.tutEnd = 0;
+    this.state = 'tutorial';
+    this.dog = { state: 'idle', t0: this.clock, timer: 0, x: CX, flip: false };
+    this.hooks.onBackground('bg1');
+    this.hooks.onSkippable(true);
+  }
+
+  /** Nút "Bỏ qua": phim -> màn tập, màn tập -> màn 1. */
+  skip() {
+    if (this.state === 'cutscene') this.startTutorial();
+    else if (this.state === 'tutorial') this.endTutorial();
+  }
+
+  endTutorial() {
+    tutorialSeen.set();
+    this.tut = null;
+    this.begin(1);
   }
 
   begin(level, hp = BAL.hp, score = 0) {
+    this.hooks.onSkippable(false);
+    this.tut = null;
+    this.tutEnd = 0;
     this.sim = new Sim((Date.now() & 0xffff) + level, level, hp, score);
     this.hooks.onBackground(LEVELS[level].bg);
     if (LEVELS[level + 1]) new Image().src = `assets/img/${LEVELS[level + 1].bg}.webp`;   // nạp trước nền màn sau
@@ -78,20 +140,22 @@ export class Session {
     return s ? Math.max(0.45, s.n / s.fps) : 0.5;
   }
 
-  /** Người chơi nhấc tay. @param {number[][]} pts */
-  stroke(pts) {
+  /** Người chơi nhấc tay. @param {number[][]} pts  @param {boolean} [touch] vẽ bằng ngón tay */
+  stroke(pts, touch = false) {
     const sim = this.sim;
-    if (this.state !== 'play' || !sim) return;
+    if ((this.state !== 'play' && this.state !== 'tutorial') || !sim) return;
+    this.tut?.tried();
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
     if (len < TAP_LEN) {   // chạm = phá ký tự rơi
       if (sim.pop(pts[0][0], pts[0][1])) audio.sfx('3', 0.5, 1.8);
       return;
     }
-    const s = recognize(pts);
+    const s = recognize(pts, { touch });
     if (!s) {   // không nhận ra: trận pháp '?' mờ + gợi ý (tối đa 1 lần / 4 giây)
       this.fx.add({ t: 'sigil', x: this.dog.x, y: SIGIL_Y, s: null, ok: false, id: fxId++, pts: thin(pts), rate: SIGIL_RATE });
-      if (this.missT <= 0) { this.fx.toast('Chưa nhận ra bùa — vẽ dứt khoát hơn nhé', 'warn', 1.6); this.missT = 4; }
+      if (this.tut) this.tut.fail();
+      else if (this.missT <= 0) { this.fx.toast('Chưa nhận ra bùa — vẽ dứt khoát hơn nhé', 'warn', 1.6); this.missT = 4; }
       return;
     }
     const ok = sim.cast(/** @type {any} */ (s), strokeGeometry(pts));
@@ -121,7 +185,7 @@ export class Session {
           if (e.boss) { fx.shake = 0.5; audio.sfx('4', 0.5, 0.6); }
           break;
         case 'healspawn':
-          fx.toast('Ma trái tim xuất hiện — vẽ ♥ để hồi máu', 'info', 3);
+          if (!this.tut) fx.toast('Ma trái tim xuất hiện — vẽ ♥ để hồi máu', 'info', 3);
           break;
         case 'step':
           fx.burst(e.x, e.y, 5, ['#1b1bb8', '#fff']);
@@ -150,7 +214,7 @@ export class Session {
           audio.arp([1.26, 1.5, 2].slice(0, Math.min(3, e.n)), 0.5);
           break;
         case 'bolt': fx.flash = 0.3; break;
-        case 'miss': if (e.cd) fx.toast('Sét đang hồi…', 'warn', 1); break;
+        case 'miss': if (e.cd) fx.toast('Sét đang hồi…', 'warn', 1); else if (this.tut) fx.toast('Chưa đúng bùa — vẽ theo bàn tay nhé', 'warn', 1.4); break;
         case 'phase': fx.toast('Boss nổi giận!', 'boss'); fx.shake = 0.5; audio.sfx('4', 0.5, 0.5); break;
         case 'pop': fx.burst(e.x, e.y, 8, ['#fff', '#ffd23f']); break;
         case 'hit':
@@ -164,6 +228,12 @@ export class Session {
 
   update(dt) {
     this.clock += dt;
+    if (this.state === 'cutscene') {   // phim mở đầu: chỉ đếm giờ + phát âm thanh theo mốc
+      this.cutT += dt;
+      while (this.cueI < CUES.length && CUES[this.cueI][0] <= this.cutT) CUE_SOUND[CUES[this.cueI++][1]]?.();
+      if (this.cutT >= DURATION) this.startTutorial();
+      return;
+    }
     this.fx.update(dt);
     this.alertT -= dt;
     this.missT -= dt;
@@ -178,23 +248,42 @@ export class Session {
       if (this.introT <= 0) { this.dog.x = CX; this.anim('idle'); this.state = 'play'; }
       return;
     }
+    if (this.state === 'tutorial' && this.tut) {
+      sim.tick(dt);
+      this.tut.observe(sim.ev);
+      this.handleEvents();
+      this.tut.update(dt, this.trail.down);
+      this.dogFace(dt);
+      if (this.tut.done && !this.tutEnd) {
+        this.tutEnd = 2;
+        this.anim('win');
+        this.fx.toast('Sẵn sàng! Đi lấy lại sách phép thôi!', 'level', 2);
+        audio.arp([1, 1.26, 1.5, 2]);
+      } else if (this.tutEnd && (this.tutEnd -= dt) <= 0) this.endTutorial();
+      return;
+    }
     if (this.state !== 'play') { this.overlayT += dt; return; }
 
     sim.tick(dt);
     this.handleEvents();
-
-    let near = null;   // quay mặt về con ma gần nhất
-    for (const g of sim.ghosts) if (!g.heal && (!near || Math.hypot(g.x - CX, g.y - CY) < Math.hypot(near.x - CX, near.y - CY))) near = g;
-    if (near) this.dog.flip = near.x < CX;
-    if (this.dog.timer > 0) this.dog.timer -= dt;
-    if (this.dog.timer <= 0) {   // ưu tiên: đang vẽ -> wave · vừa có đợt ma -> alert · còn lại idle
-      const want = this.trail.down ? 'wave' : this.alertT > 0 ? 'alert' : 'idle';
-      if (this.dog.state !== want) this.anim(want);
-    }
+    this.dogFace(dt);
 
     if (sim.over) this.finish('over', 'lose', 'Thua rồi…', `Điểm ${sim.score} · chạm để thử lại màn ${sim.level}`, () => audio.sfx('5', 0.8, 0.7));
     else if (sim.cleared) this.finish('clear', 'win', `Hoàn thành màn ${sim.level}!`, 'Chạm để sang màn tiếp theo (+1 máu)', () => audio.arp([1, 1.26, 1.5, 2]));
     else if (sim.won) this.finish('won', 'win', 'ĐÁNH BẠI BOSS! 🎉', `Điểm ${sim.score} · chạm để về menu`, () => audio.arp([1, 1.26, 1.5, 2, 1.5, 2, 2.5]));
+  }
+
+  /** Quay mặt về con ma gần nhất + chọn animation nghỉ (đang vẽ -> wave · vừa có đợt ma -> alert · idle). */
+  dogFace(dt) {
+    const sim = /** @type {Sim} */ (this.sim);
+    let near = null;
+    for (const g of sim.ghosts) if (!g.heal && (!near || Math.hypot(g.x - CX, g.y - CY) < Math.hypot(near.x - CX, near.y - CY))) near = g;
+    if (near) this.dog.flip = near.x < CX;
+    if (this.dog.timer > 0) this.dog.timer -= dt;
+    if (this.dog.timer <= 0 && !this.tutEnd) {
+      const want = this.trail.down ? 'wave' : this.alertT > 0 ? 'alert' : 'idle';
+      if (this.dog.state !== want) this.anim(want);
+    }
   }
 
   finish(state, anim, a, b, sound) {
@@ -208,6 +297,11 @@ export class Session {
 
   /** Dữ liệu cho lớp vẽ. */
   view() {
-    return { sim: this.sim, t: this.clock, trail: this.trail, dog: this.dog, fx: this.fx, msg: this.msg };
+    const tut = this.tut;
+    return {
+      sim: this.sim, t: this.clock, trail: this.trail, dog: this.dog, fx: this.fx, msg: this.msg,
+      /** màn tập: băng lời dặn + bàn tay mẫu (thay cho dòng "Màn x · Đợt y") */
+      guide: tut && !tut.done ? { say: tut.step.say, sub: `${tut.step.sub || ''}  ·  ${tut.count}`, a: tut.wait > 0 ? 0 : Math.min(1, tut.t * 3), demo: tut.demo() } : null,
+    };
   }
 }

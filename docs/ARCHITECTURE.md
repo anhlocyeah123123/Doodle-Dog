@@ -12,19 +12,24 @@ web/                       <- toàn bộ trang web (xuất bản thẳng lên Ne
    ├─ core/                LOGIC THUẦN – không DOM, không âm thanh -> chạy được trong Node/test/bot
    │  ├─ config.js         MỌI con số cân bằng + kịch bản 4 màn (LEVELS) + bảng bùa -> animation
    │  ├─ sim.js            mô phỏng 1 màn: đợt ma, ma nhiều bùa, ma tim, sét, boss 2 pha, ký tự rơi
-   │  └─ recognizer.js     nét vẽ -> tên bùa (hình học, không học máy)
+   │  └─ recognizer.js     nét vẽ -> tên bùa: lấy mẫu → làm mượt → rút gọn RDP → bỏ móc → đếm góc gập
+   │                       (ngón tay: làm mượt mạnh hơn chuột, xem TUNE)
    ├─ engine/              lớp nền tảng dùng lại được cho game khác
    │  ├─ loop.js           60 bước logic/giây cố định + phát hiện giật để hạ chất lượng
    │  ├─ input.js          Pointer Events (chuột/cảm ứng/bút), chỉ nhận ngón đầu tiên
    │  ├─ audio.js          mở khóa âm thanh iOS/Android, SFX WebAudio, nhạc nền <audio>
    │  └─ assets.js         nạp sprite/ảnh theo manifest + font, tự thử lại khi mạng lỗi
    ├─ game/
-   │  ├─ session.js        trạng thái phiên: intro → play → clear/over/won; sự kiện Sim -> hiệu ứng/âm thanh/animation
+   │  ├─ session.js        trạng thái phiên: cutscene → tutorial → intro → play → clear/over/won; sự kiện Sim -> hiệu ứng/âm thanh
+   │  ├─ tutorial.js       màn tập: 8 bước (STEPS), mỗi bước đặt ma + nét mẫu, chờ người chơi làm đúng
    │  └─ effects.js        hạt mực, vòng sóng, tia sét, thông báo, rung (thuần hình ảnh)
    ├─ render/
-   │  ├─ draw.js           vẽ 1 khung hình từ trạng thái (không đổi trạng thái)
+   │  ├─ view.js           khung nhìn: canvas phủ kín màn hình, thế giới 960x540 ở giữa (bám đáy)
+   │  ├─ draw.js           vẽ 1 khung hình từ trạng thái (không đổi trạng thái); HUD phóng to trên màn thấp
    │  ├─ ink.js            phong cách bút mực: nét vẽ, chữ, tim, bong bóng bùa
    │  ├─ sigil.js          hiệu ứng niệm bùa (4 kiểu, SIGIL_STYLE) + tia quét theo nét vẽ
+   │  ├─ cutscene.js       phim mở đầu ~12.5s vẽ bằng canvas từ sprite có sẵn (kịch bản theo mốc giây, CUES = âm thanh)
+   │  ├─ guide.js          bàn tay mực vẽ mẫu + băng lời dặn của màn tập
    │  └─ cache.js          đệm hình chữ/bong bóng -> không vẽ chữ lại mỗi khung (rất tốn trên máy yếu)
    └─ ui/menu.js           DOM: menu, chọn màn, hướng dẫn, tạm dừng, âm thanh, toàn màn hình
 tests/                     test.js (luật + nhận dạng), balance.js (bot đo độ khó)
@@ -68,3 +73,11 @@ và sau này chạy trên máy chủ/máy chủ phòng khi làm online (cùng se
 - Mọi file `// @ts-check` + JSDoc: `npm run typecheck` bắt lỗi kiểu mà không cần bước build.
 - Chú thích bằng tiếng Việt, tên biến tiếng Anh.
 - `core/` không được import từ `engine/`, `render/`, `game/`, `ui/`.
+
+## Phim mở đầu + màn tập
+
+- Lần đầu bấm **Chơi ngay**: phim mở đầu → màn tập → màn 1. Học xong lưu `localStorage['dd-tut']`, lần sau vào thẳng màn 1.
+- Nút **Bỏ qua ⏭** (góc trên): phim → màn tập → màn 1. Xem lại: bảng *Cách chơi* → *Xem phim mở đầu + màn tập*.
+- Màn tập dùng chính `Sim` ở chế độ level 0 (`sim.tut`): ma đứng yên, không cắn, không tự qua màn.
+- Sửa kịch bản phim: các mốc giây trong `render/cutscene.js`. Thêm/bớt bước tập: mảng `STEPS` trong `game/tutorial.js`
+  (test `npm test` tự đi hết màn tập bằng nét mẫu, nên bước nào có nét mẫu không nhận ra được sẽ báo lỗi).

@@ -21,31 +21,36 @@ if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIn
 <body>
 <div id="wrap">
   <div id="stage">
-    <canvas id="c" aria-label="Màn chơi: vẽ bùa lên màn hình"></canvas>
+    <div id="safe"><canvas id="c" aria-label="Màn chơi: vẽ bùa lên màn hình"></canvas></div>
 
     <div id="hud" hidden>
+      <button id="skip" hidden>Bỏ qua ⏭</button>
       <button id="pauseBtn" class="icon" aria-label="Tạm dừng">❚❚</button>
     </div>
 
     <section id="menu">
       <div id="mrun" class="spr"></div>
-      <div class="paper">
-        <h1><span>Doodle</span><span>Dog</span></h1>
-        <svg class="brush" viewBox="0 0 400 30" aria-hidden="true"><path d="M5 18C80 4 150 28 230 12S350 8 395 16"/></svg>
-        <p class="tag">Vẽ bùa bằng ngón tay, đuổi lũ ma Halloween!</p>
-        <button id="play" class="big" disabled>Chơi ngay</button>
-        <div id="lv" aria-label="Chọn màn"></div>
-        <div class="row">
-          <button id="how">Cách vẽ bùa</button>
-          <button class="mute icon" aria-label="Bật/tắt âm thanh">🔊</button>
-          <button class="fs icon" aria-label="Toàn màn hình" hidden>⛶</button>
-        </div>
-        <p id="status" role="status">Đang tải…</p>
-      </div>
       <div id="mdog" class="spr"></div>
       <div id="mg1" class="spr ghost"></div>
       <div id="mg2" class="spr ghost"></div>
+      <div class="paper">
+        <h1><span>Doodle</span> <span>Dog</span></h1>
+        <svg class="brush" viewBox="0 0 400 30" aria-hidden="true"><path d="M5 18C80 4 150 28 230 12S350 8 395 16"/></svg>
+        <p class="tag">Vẽ bùa bằng ngón tay, đuổi lũ ma Halloween!</p>
+        <div class="go">
+          <button id="play" class="big" disabled>Chơi ngay</button>
+          <button id="how">Cách chơi</button>
+        </div>
+        <div class="lvrow"><span class="lbl">Chọn màn</span><div id="lv" aria-label="Chọn màn"></div></div>
+        <p id="status" role="status">Đang tải…</p>
+      </div>
     </section>
+
+    <!-- góc trên phải: luôn thấy ở menu, không bị bảng che -->
+    <div id="corner">
+      <button class="mute icon" aria-label="Bật/tắt âm thanh">🔊</button>
+      <button class="fs icon" aria-label="Toàn màn hình" hidden>⛶</button>
+    </div>
 
     <section id="help" class="sheet" hidden>
       <div class="card">
@@ -61,7 +66,25 @@ if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIn
           <li><svg viewBox="0 0 60 60"><path d="M30 52C4 34 8 10 24 12c4 1 6 4 6 8 0-4 2-7 6-8 16-2 20 22-6 40Z"/></svg><b>Tim</b><span>hồi máu (ma ♥)</span></li>
           <li><svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="9" class="fill"/><circle cx="30" cy="30" r="20"/></svg><b>Chạm</b><span>phá đồ boss ném</span></li>
         </ul>
-        <p class="hint small ios-only">Mẹo iPhone: Chia sẻ → “Thêm vào MH chính” để chơi toàn màn hình.</p>
+        <div class="row">
+          <button class="close big">Đã hiểu</button>
+          <button id="replay">🎬 Xem phim mở đầu + màn tập</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="fsTip" class="sheet" hidden>
+      <div class="card narrow">
+        <h2>Chơi toàn màn hình</h2>
+        <p class="hint">Safari trên iPhone không cho trang web tự bật toàn màn hình. Có 2 cách:</p>
+        <ol class="steps">
+          <li><b>Đẹp nhất:</b> bấm nút <b>Chia sẻ</b>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 11v9h14v-9"/></svg>
+            → <b>Thêm vào MH chính</b>, rồi mở <b>Doodle Dog</b> từ màn hình chính. Game chạy kín màn hình như ứng dụng.</li>
+          <li><b>Nhanh:</b> bấm biểu tượng <b>aA</b> (hoặc
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>)
+            bên trái thanh địa chỉ → <b>Ẩn thanh công cụ</b>.</li>
+        </ol>
         <button class="close big">Đã hiểu</button>
       </div>
     </section>
@@ -72,6 +95,7 @@ if (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIn
         <button id="resume" class="big">Chơi tiếp</button>
         <div class="row">
           <button class="mute icon" aria-label="Bật/tắt âm thanh">🔊</button>
+          <button class="fs icon" aria-label="Toàn màn hình" hidden>⛶</button>
           <button id="pauseHelp">Cách vẽ bùa</button>
           <button id="quit">Về menu</button>
         </div>

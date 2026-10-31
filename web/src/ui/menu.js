@@ -3,7 +3,7 @@
 // Không chứa luật chơi; chỉ gọi các hàm được truyền vào qua `actions`.
 import { LAST, LEVELS } from '../core/config.js';
 import { audio } from '../engine/audio.js';
-import { progress } from '../game/session.js';
+import { progress, tutorialSeen } from '../game/session.js';
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const stage = $('stage');
@@ -13,11 +13,11 @@ export function setBackground(key) {
   stage.style.backgroundImage = `url(assets/img/${key}.webp)`;
 }
 
-/** Cập nhật --u (1% chiều cao khung) và --sc (tỉ lệ so với 960px) cho CSS. */
+/** Cập nhật --u (1% chiều cao màn hình) và --sc (tỉ lệ so với thế giới 960x540) cho CSS. */
 function trackSize() {
   const fit = () => {
     stage.style.setProperty('--u', `${stage.clientHeight / 100}px`);
-    stage.style.setProperty('--sc', String(stage.clientWidth / 960));
+    stage.style.setProperty('--sc', String(Math.min(stage.clientWidth / 960, stage.clientHeight / 540)));
   };
   new ResizeObserver(fit).observe(stage);
   fit();
@@ -35,7 +35,9 @@ function cssSprite(el, A, name) {
 }
 
 const isTouch = matchMedia('(pointer: coarse)').matches;
-const canFullscreen = !!document.documentElement.requestFullscreen;   // Android có; iPhone Safari không
+const canFullscreen = !!document.documentElement.requestFullscreen;   // Android, PC, iPad có; iPhone Safari KHÔNG
+/** Đã mở từ biểu tượng ở màn hình chính (chạy như ứng dụng, sẵn kín màn hình). */
+const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || /** @type {any} */ (navigator).standalone === true;
 
 /** Android: vào toàn màn hình + khóa ngang khi bắt đầu chơi. iPhone: dùng "Thêm vào MH chính". */
 async function enterFullscreen() {
@@ -48,7 +50,7 @@ async function enterFullscreen() {
 
 /**
  * @param {{
- *   start:(level:number)=>void, quit:()=>void,
+ *   start:(level:number)=>void, story:()=>void, skip:()=>void, quit:()=>void,
  *   setPaused:(p:boolean)=>void, isPlaying:()=>boolean
  * }} actions
  */
@@ -64,10 +66,17 @@ export function setupUI(actions) {
   }
   refreshMute();
 
-  const fsBtn = /** @type {HTMLElement} */ (document.querySelector('.fs'));
-  if (canFullscreen) {
-    fsBtn.hidden = false;
-    fsBtn.addEventListener('click', () => (document.fullscreenElement ? document.exitFullscreen() : enterFullscreen()));
+  // Nút toàn màn hình (góc menu + bảng tạm dừng). iPhone không có API -> mở bảng hướng dẫn thay thế.
+  const fsTip = $('fsTip');
+  const toggleFs = () => {
+    if (canFullscreen) document.fullscreenElement ? document.exitFullscreen() : enterFullscreen();
+    else { fsFrom = pause.hidden ? null : pause; pause.hidden = true; fsTip.hidden = false; }
+  };
+  let fsFrom = /** @type {HTMLElement|null} */ (null);
+  fsTip.querySelector('.close')?.addEventListener('click', () => { fsTip.hidden = true; if (fsFrom) fsFrom.hidden = false; });
+  for (const b of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('.fs'))) {
+    b.hidden = standalone;
+    b.addEventListener('click', toggleFs);
   }
 
   const buildLevels = () => {
@@ -78,14 +87,19 @@ export function setupUI(actions) {
     }).join('');
   };
 
+  /** @param {number} level 0 = phim mở đầu + màn tập */
   const begin = (level) => {
     audio.unlock();   // phải nằm trong sự kiện chạm để iOS cho phát tiếng
     if (isTouch) enterFullscreen();
-    menu.hidden = true;
+    menu.hidden = true; help.hidden = true; pause.hidden = true;
     hud.hidden = false;
-    actions.start(level);
+    actions.setPaused(false);
+    if (level === 0) actions.story(); else actions.start(level);
   };
-  $('play').addEventListener('click', () => begin(1));
+  // Lần đầu chơi: phim mở đầu -> màn tập -> màn 1. Đã học rồi: vào thẳng màn 1.
+  $('play').addEventListener('click', () => begin(tutorialSeen.get() ? 1 : 0));
+  $('replay').addEventListener('click', () => begin(0));
+  $('skip').addEventListener('click', () => actions.skip());
   $('lv').addEventListener('click', (e) => {
     const l = Number(/** @type {HTMLElement} */ (e.target).closest?.('button')?.dataset.l);
     if (l) begin(l);
@@ -100,7 +114,7 @@ export function setupUI(actions) {
 
   // tạm dừng
   const showPause = () => {
-    if (!actions.isPlaying() || !help.hidden) return;
+    if (!actions.isPlaying() || !help.hidden || !fsTip.hidden) return;
     actions.setPaused(true);
     pause.hidden = false;
   };
@@ -108,7 +122,8 @@ export function setupUI(actions) {
   $('pauseBtn').addEventListener('click', showPause);
   $('resume').addEventListener('click', hidePause);
   const toMenu = () => {
-    pause.hidden = true; help.hidden = true; hud.hidden = true; menu.hidden = false;
+    pause.hidden = true; help.hidden = true; fsTip.hidden = true; hud.hidden = true; menu.hidden = false;
+    $('skip').hidden = true;
     actions.setPaused(false);
     actions.quit();
     setBackground('menu');
@@ -128,6 +143,8 @@ export function setupUI(actions) {
 
   return {
     toMenu,
+    /** Hiện nút "Bỏ qua" trong phim mở đầu và màn tập. @param {boolean} on */
+    setSkippable(on) { $('skip').hidden = !on; },
     /** @param {import('../engine/assets.js').Assets} A */
     ready(A) {
       cssSprite($('mdog'), A, 'idle');

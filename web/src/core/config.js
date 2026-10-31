@@ -74,3 +74,5 @@ export const LEVELS = {
   4: level('Hang phù thủy — BOSS', 'bg4', 6, [[4, 2, 1.65, 1, 1], [4, 3, 1.7, 1, 6], [2, 4, 1.75, 1.2, 11], [1, 7, 2.2, 3, 16, true]]),
 };
 export const LAST = Math.max(...Object.keys(LEVELS).map(Number));
+/** Màn tập (level 0): không có đợt ma, ma do game/tutorial.js đặt từng con; không cắn, không tự qua màn. */
+export const TUTORIAL = level('Màn tập', 'bg1', 1e9, []);

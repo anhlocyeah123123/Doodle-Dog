@@ -1,11 +1,13 @@
 // @ts-check
 // Chỉ VẼ: đọc trạng thái (sim + hiệu ứng) và vẽ lên canvas. Không thay đổi trạng thái game.
 // Ảnh nền là CSS phía sau canvas trong suốt -> trình duyệt tự ghép, không tốn công vẽ lại mỗi khung.
-import { W, H, GY, CX, GLYPH, BAL } from '../core/config.js';
+import { GY, CX, GLYPH, BAL } from '../core/config.js';
 import { INK, ink, inkStroke, inkText, inkHeart, bubble } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
 import { drawSigil, drawBeam, drawArea } from './sigil.js';
+import { VIEW, uiK } from './view.js';
+import { drawDemo, drawBanner } from './guide.js';
 
 const TAU = Math.PI * 2;
 
@@ -54,7 +56,8 @@ function drawGhost(c, A, g, t) {
       bubble(c, x0 + i * 34, top - 6, 14, GLYPH[g.seq[i]], done ? '#aaa' : INK, i === g.i ? '#ffe066' : done ? '#ddd' : '#fff');
     }
   } else {
-    bubble(c, g.x, top - 12, 19, GLYPH[g.seq[g.i]]);
+    const r = Math.round(19 * Math.min(1.35, uiK()));   // màn nhỏ: ký hiệu to hơn cho dễ đọc
+    bubble(c, g.x, top - r + 7, r, GLYPH[g.seq[g.i]]);
     const left = g.seq.length - g.i - 1;
     if (left > 0) inkText(c, '+' + left, g.x + 22, top - 2, 16);
   }
@@ -97,31 +100,42 @@ function drawToast(c, o, i) {
     inkText(g, o.txt, w / 2 + 3, h / 2 + size * 0.38, size, 'center');
   });
   e.ox = e.w / 2; e.oy = e.h / 2;
+  const k = uiK();
+  c.save(); c.translate(VIEW.w / 2, 0); c.scale(k, k);
   c.globalAlpha = a;
-  blit(c, e, W / 2, (big ? 150 : 210) + i * 50 - (1 - a) * 16);
-  c.globalAlpha = 1;
+  blit(c, e, 0, (big ? 150 : 210) + i * 50 - (1 - a) * 16);
+  c.restore();
 }
 
-function drawHud(c, sim) {
+function drawHud(c, sim, title = true) {
+  const k = uiK();
+  c.save(); c.scale(k, k);
   for (let i = 0; i < BAL.hp; i++) inkHeart(c, 36 + i * 40, 38, 16, i < sim.hp ? '#ff6b9a' : 'rgba(255,255,255,.3)');
   inkText(c, String(sim.score), 22, 92, 30);
-  inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, W / 2, 40, 24, 'center');
+  if (title) inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, VIEW.w / 2 / k, 40, 24, 'center');
   const r = 1 - sim.boltCd / BAL.boltCd;   // thanh hồi chiêu sét
   c.fillStyle = '#fff'; c.fillRect(56, 108, 120, 14);
   c.fillStyle = r >= 1 ? '#ffc400' : '#9bb'; c.fillRect(56, 108, 120 * r, 14);
   c.strokeStyle = INK; c.lineWidth = 3; c.strokeRect(56, 108, 120, 14);
   inkText(c, '⚡', 24, 124, 20, 'left', '#d99a00');
+  c.restore();
 }
 
 function drawPanel(c, msg) {
-  const e = cached(`msg|${msg.a}|${msg.b}`, W + 8, 160, 4, 0, (g) => {
-    g.fillStyle = 'rgba(255,255,255,.92)'; g.fillRect(0, 4, W + 8, 150);
-    g.strokeStyle = INK; g.lineWidth = 4; g.strokeRect(0, 4, W + 8, 150);
-    inkText(g, msg.a, W / 2 + 4, 76, 48, 'center');
-    inkText(g, msg.b, W / 2 + 4, 126, 24, 'center');
+  const k = uiK(), w = Math.ceil(VIEW.w / k);
+  const e = cached(`msg|${w}|${msg.a}|${msg.b}`, w + 8, 160, 4, 0, (g) => {
+    g.fillStyle = 'rgba(255,255,255,.92)'; g.fillRect(0, 4, w + 8, 150);
+    g.strokeStyle = INK; g.lineWidth = 4; g.strokeRect(0, 4, w + 8, 150);
+    inkText(g, msg.a, w / 2 + 4, 76, 48, 'center');
+    inkText(g, msg.b, w / 2 + 4, 126, 24, 'center');
   });
-  blit(c, e, 0, 186);
+  c.save(); c.translate(0, VIEW.h / 2); c.scale(k, k);
+  blit(c, e, 0, -80);
+  c.restore();
 }
+
+/** Độ dày nét theo thiết bị: cảm ứng cần nét dày ≥ ~7px THẬT trên màn hình để thấy rõ dưới ngón tay. */
+const strokeK = (touch) => (touch ? Math.max(1, 0.7 / VIEW.s) : 1);
 
 /**
  * @param {CanvasRenderingContext2D} c
@@ -130,8 +144,9 @@ function drawPanel(c, msg) {
  */
 export function draw(c, A, v) {
   const { sim, t, trail, dog, fx } = v;
-  c.clearRect(0, 0, W, H);
+  c.clearRect(0, 0, VIEW.w, VIEW.h);
   c.save();
+  c.translate(VIEW.ox, VIEW.oy);   // thế giới 960x540 nằm giữa khung nhìn, bám đáy
   if (fx.shake > 0 && !ink.low) c.translate((Math.random() - 0.5) * fx.shake * 26, (Math.random() - 0.5) * fx.shake * 26);
 
   c.fillStyle = 'rgba(0,0,0,.28)';   // bóng dưới chân
@@ -141,7 +156,11 @@ export function draw(c, A, v) {
     const danger = Math.abs(s.x - CX) < BAL.symHitR;
     c.strokeStyle = danger ? 'rgba(255,60,80,.85)' : 'rgba(255,255,255,.3)'; c.lineWidth = 3;
     c.beginPath(); c.ellipse(s.x, GY + 4, 30, 7, 0, 0, TAU); c.stroke();
-    const e = cached(`sym|${s.ch}`, 52, 52, 26, 40, (g) => { g.font = '36px sans-serif'; g.textAlign = 'center'; g.fillText(s.ch, 26, 40); });
+    const e = cached(`sym|${s.ch}`, 52, 52, 26, 40, (g) => {
+      g.fillStyle = '#ff9a3c'; g.strokeStyle = INK; g.lineWidth = 3;   // nền tròn: vẫn thấy rõ dù máy thiếu font emoji
+      g.beginPath(); g.arc(26, 27, 21, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.font = '30px sans-serif'; g.textAlign = 'center'; g.fillText(s.ch, 26, 38);
+    });
     blit(c, e, s.x, s.y);
   }
   for (const g of sim.ghosts) drawGhost(c, A, g, t);
@@ -155,12 +174,14 @@ export function draw(c, A, v) {
     else { c.fillStyle = p.col; c.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz); }   // hình vuông rẻ hơn hình tròn
   }
   c.globalAlpha = 1;
-  inkStroke(c, trail.pts, trail.down ? 1 : trail.fade * 4);
+  if (v.guide?.demo) drawDemo(c, v.guide.demo);   // màn tập: bàn tay vẽ mẫu (dưới nét của người chơi)
+  inkStroke(c, trail.pts, trail.down ? 1 : trail.fade * 4, strokeK(trail.touch));
   c.restore();
 
-  if (fx.flash > 0) { c.fillStyle = `rgba(255,255,230,${fx.flash * 2})`; c.fillRect(0, 0, W, H); }
-  if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(0, 0, W, H); }
-  drawHud(c, sim);
+  if (fx.flash > 0) { c.fillStyle = `rgba(255,255,230,${fx.flash * 2})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }
+  if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(0, 0, VIEW.w, VIEW.h); }
+  drawHud(c, sim, !v.guide);
+  if (v.guide) drawBanner(c, v.guide.say, v.guide.sub, v.guide.a);
   fx.toasts.forEach((o, i) => drawToast(c, o, i));
   if (v.msg) drawPanel(c, v.msg);
 }

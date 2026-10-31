@@ -1,6 +1,7 @@
 /* Doodle Dog — giao diện kiểu sổ vẽ bút mực.
-   --u = 1% chiều cao khung game (JS cập nhật khi đổi kích thước). Mọi cỡ chữ/nút tính theo --u
-   nhưng có mức TỐI THIỂU để vẫn đọc và bấm được trên điện thoại (chữ ≥14px, nút ≥44px). */
+   Khung game PHỦ KÍN màn hình (ảnh nền cover); canvas nằm trong vùng an toàn (#safe, trừ tai thỏ).
+   --u  = 1% chiều cao màn hình, --sc = tỉ lệ so với thế giới 960x540 (menu.js cập nhật khi đổi cỡ).
+   Mọi cỡ chữ/nút tính theo --u nhưng có mức TỐI THIỂU để vẫn đọc và bấm được (chữ ≥14px, nút ≥44px). */
 
 @font-face {
   font-family: Hand;
@@ -16,33 +17,32 @@
   --u: 3.9px;
   --sc: 0.72;
   --tap: 44px;
+  --st: env(safe-area-inset-top, 0px);
+  --sr: env(safe-area-inset-right, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
+  --sl: env(safe-area-inset-left, 0px);
 }
 * { box-sizing: border-box; }
 html, body {
   margin: 0; height: 100%; overflow: hidden;
+  position: fixed; inset: 0;              /* iOS: trang không "nảy" khi vuốt */
   background: #070a20; color: var(--ink); font-family: var(--hand);
   -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;          /* iOS: nhấn giữ không bật menu */
+  -webkit-touch-callout: none;            /* iOS: nhấn giữ không bật menu */
   -webkit-user-select: none; user-select: none;
-  overscroll-behavior: none;            /* Android: không kéo để tải lại trang */
+  overscroll-behavior: none;              /* Android: không kéo để tải lại trang */
   -webkit-text-size-adjust: 100%;
+  touch-action: none;                     /* không cuộn, không phóng to; .card tự mở lại cuộn dọc */
 }
 
-/* Khung game 16:9, nằm trong vùng an toàn (tai thỏ / thanh điều hướng).
-   dvh = chiều cao thật trừ thanh địa chỉ Safari; vh là dự phòng cho trình duyệt cũ. */
-#wrap {
-  position: fixed; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-}
+#wrap { position: fixed; inset: 0; }
 #stage {
-  position: relative; overflow: hidden;
-  width: min(100%, 177.78vh); aspect-ratio: 16 / 9;
+  position: absolute; inset: 0; overflow: hidden;
   background: #0b1030 center / cover no-repeat;
-  container-type: size;
 }
-@supports (height: 100dvh) { #stage { width: min(100%, calc((100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 16 / 9)); } }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+/* vùng an toàn: canvas căn giữa trong đó, JS đặt kích thước đúng tỉ lệ khung nhìn */
+#safe { position: absolute; top: var(--st); right: var(--sr); bottom: var(--sb); left: var(--sl); }
+canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 100%; height: 100%; touch-action: none; }
 
 /* ---------- nút kiểu mực ---------- */
 button {
@@ -54,49 +54,72 @@ button {
   border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
   box-shadow: 3px 4px 0 rgba(27, 27, 184, .55);
   touch-action: manipulation;   /* bỏ trễ 300ms + không phóng to khi chạm đúp */
+  white-space: nowrap;
 }
 button:active { transform: translate(2px, 3px); box-shadow: none; }
 button:disabled { opacity: .5; }
 button.big { font-size: max(20px, calc(var(--u) * 7)); padding: 0 max(22px, calc(var(--u) * 6)); background: #ffe066; }
 button.icon { padding: 0; font-size: max(17px, calc(var(--u) * 4.6)); }
 [hidden] { display: none !important; }
-.row { display: flex; gap: max(8px, calc(var(--u) * 2)); flex-wrap: wrap; align-items: center; }
+.row { display: flex; gap: max(8px, calc(var(--u) * 2)); flex-wrap: wrap; align-items: center; justify-content: center; }
 
-/* ---------- HUD trong game ---------- */
-#hud { position: absolute; right: max(8px, calc(var(--u) * 2)); top: max(8px, calc(var(--u) * 2)); }
+/* ---------- nút nổi ở góc (tạm dừng khi chơi; âm thanh + toàn màn hình ở menu) ---------- */
+#hud, #corner {
+  position: absolute; z-index: 4; display: flex; gap: 8px;
+  top: calc(var(--st) + max(8px, calc(var(--u) * 2)));
+  right: calc(var(--sr) + max(8px, calc(var(--u) * 2)));
+}
 #hud button { opacity: .9; font-size: max(14px, calc(var(--u) * 3.6)); letter-spacing: -2px; }
+#corner button { background: rgba(255, 255, 255, .92); }
+#menu[hidden] ~ #corner { display: none; }
 
 /* ---------- menu ---------- */
 #menu {
-  position: absolute; inset: 0; display: flex; align-items: center; padding-left: 5%;
+  position: absolute; inset: 0; display: flex; align-items: center;
+  padding: calc(var(--st) + 8px) var(--sr) calc(var(--sb) + 8px) max(4%, calc(var(--sl) + 12px));
   background:
     radial-gradient(120% 90% at 0 100%, rgba(27, 27, 184, .55), transparent 60%),
     radial-gradient(80% 70% at 100% 0, rgba(255, 110, 40, .35), transparent 55%),
     linear-gradient(90deg, rgba(7, 10, 32, .6), rgba(7, 10, 32, .1));
 }
 .paper {
-  position: relative; z-index: 2; width: min(46%, 520px); max-height: 94%;
-  padding: calc(var(--u) * 4.5) calc(var(--u) * 5) calc(var(--u) * 4);
-  transform: rotate(-2deg);
+  position: relative; z-index: 2; width: min(44%, 540px); max-height: 100%;
+  padding: calc(var(--u) * 5) calc(var(--u) * 5.5) calc(var(--u) * 4.5);
+  transform: rotate(-1.5deg);
   filter: drop-shadow(5px 7px 0 rgba(10, 10, 60, .5));
-  display: flex; flex-direction: column; align-items: flex-start; gap: max(6px, calc(var(--u) * 1.8));
+  display: flex; flex-direction: column; align-items: flex-start; gap: max(8px, calc(var(--u) * 2.2));
 }
-.paper::before {   /* giấy kẻ dòng, mép xé */
+.paper::before {   /* giấy kẻ dòng, lề đỏ, mép xé */
   content: ""; position: absolute; inset: 0; z-index: -1;
-  background: var(--paper) repeating-linear-gradient(#0000 0 calc(var(--u) * 6), rgba(27, 27, 184, .1) 0 calc(var(--u) * 6.3));
+  background:
+    linear-gradient(90deg, #0000 calc(var(--u) * 3.2), rgba(216, 67, 15, .35) 0 calc(var(--u) * 3.2 + 2px), #0000 0),
+    repeating-linear-gradient(#0000 0 calc(var(--u) * 6), rgba(27, 27, 184, .1) 0 calc(var(--u) * 6.3)),
+    var(--paper);
   clip-path: polygon(0 3%, 5% 0, 12% 2%, 20% 0, 31% 2%, 42% 0, 55% 2%, 68% 0, 80% 2%, 92% 0, 100% 3%, 98% 20%, 100% 38%, 97% 55%, 100% 74%, 98% 100%, 88% 98%, 76% 100%, 60% 98%, 46% 100%, 32% 98%, 18% 100%, 6% 98%, 0 100%, 2% 78%, 0 58%, 3% 40%, 0 22%);
 }
-h1 { margin: 0 0 calc(var(--u) * 1.5); line-height: .95; font-size: calc(var(--u) * 12.5); font-weight: 700; text-shadow: 2px 2px 0 #fff; }
+.paper::after {    /* băng dính giữ tờ giấy */
+  content: ""; position: absolute; top: calc(var(--u) * -2); left: 50%; width: 26%; height: calc(var(--u) * 6);
+  translate: -50% 0; rotate: 3deg;
+  background: rgba(255, 224, 102, .75); box-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+}
+h1 { margin: 0; line-height: .9; font-size: calc(var(--u) * 12.5); font-weight: 700; text-shadow: 2px 2px 0 #fff; }
 h1 span { display: block; }
 h1 span:first-child { transform: rotate(-3deg); }
 h1 span:last-child { transform: rotate(2deg) translateX(calc(var(--u) * 9)); color: var(--hot); }
-.brush { width: 62%; height: calc(var(--u) * 4); margin-top: calc(var(--u) * -2); }
+.brush { width: 62%; height: calc(var(--u) * 4); margin: calc(var(--u) * -2.5) 0 calc(var(--u) * -1); }
 .brush path { fill: none; stroke: var(--ink); stroke-width: 7; stroke-linecap: round; stroke-dasharray: 520; stroke-dashoffset: 520; animation: draw 1.2s .3s forwards; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 .tag { margin: 0; font-size: max(15px, calc(var(--u) * 4.2)); line-height: 1.25; }
+.go { display: flex; gap: max(10px, calc(var(--u) * 2.4)); align-items: center; flex-wrap: wrap; }
 #play { transform: rotate(1.5deg); }
+#how { transform: rotate(-2deg); }
+.lvrow { display: flex; align-items: center; gap: max(8px, calc(var(--u) * 2)); flex-wrap: wrap; }
+.lbl { font-size: max(14px, calc(var(--u) * 3.8)); font-weight: 700; opacity: .8; }
 #lv { display: flex; gap: max(8px, calc(var(--u) * 1.8)); }
 #lv button { border-radius: 50% 45% 55% 40%; padding: 0; }
+#lv button:nth-child(even) { rotate: 4deg; }
+#lv button:nth-child(odd) { rotate: -3deg; }
+#lv button:disabled { opacity: .45; font-size: max(13px, calc(var(--u) * 3.4)); }
 #status { margin: 0; font-size: max(13px, calc(var(--u) * 3.4)); }
 #status:empty { display: none; }
 
@@ -107,21 +130,23 @@ h1 span:last-child { transform: rotate(2deg) translateX(calc(var(--u) * 9)); col
   animation: fr var(--dur) steps(var(--n)) infinite;
 }
 @keyframes fr { to { background-position-x: calc(var(--w) * var(--n) * -1); } }
-#mdog { right: 17%; bottom: 20%; scale: calc(var(--sc) * 2); z-index: 1; }
-#mg1 { right: 5%; top: 12%; scale: calc(var(--sc) * 1.3); animation: fr .6s steps(5) infinite, fl 4s ease-in-out infinite alternate; }
-#mg2 { right: 33%; top: 5%; scale: calc(var(--sc) * .9); opacity: .9; animation: fr .6s steps(5) infinite, fl 3s ease-in-out infinite alternate-reverse; }
-@keyframes fl { to { translate: -4cqw 3cqh; } }
-#mrun { left: -20%; bottom: 1%; scale: calc(var(--sc) * 1.1); z-index: 1; animation: fr 1.5s steps(18) infinite, cross 11s linear infinite; }
-@keyframes cross { to { left: 110%; } }
+#mdog { right: 16%; bottom: 18%; scale: calc(var(--sc) * 2); z-index: 1; }
+#mg1 { right: 5%; top: 14%; scale: calc(var(--sc) * 1.3); animation: fr .6s steps(5) infinite, fl 4s ease-in-out infinite alternate; }
+#mg2 { right: 34%; top: 7%; scale: calc(var(--sc) * .9); opacity: .9; animation: fr .6s steps(5) infinite, fl 3s ease-in-out infinite alternate-reverse; }
+@keyframes fl { to { translate: -4vw 3vh; } }
+#mrun { left: 48%; bottom: 1%; scale: calc(var(--sc) * 1.1); z-index: 1; opacity: 0; animation: fr 1.5s steps(18) infinite, cross 8s linear infinite; }
+@keyframes cross { 0% { left: 46%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { left: 104%; opacity: 0; } }
 
-/* ---------- bảng phủ (hướng dẫn, tạm dừng) ---------- */
+/* ---------- bảng phủ (hướng dẫn, tạm dừng, toàn màn hình) ---------- */
 .sheet {
   position: absolute; inset: 0; z-index: 5;
   display: flex; align-items: center; justify-content: center;
+  padding: calc(var(--st) + 6px) calc(var(--sr) + 6px) calc(var(--sb) + 6px) calc(var(--sl) + 6px);
   background: rgba(7, 10, 32, .62);
 }
 .card {
-  position: relative; width: min(92%, 860px); max-height: 94%; overflow: auto;
+  position: relative; width: min(94%, 860px); max-height: 100%; overflow: auto;
+  touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   padding: calc(var(--u) * 3.5) calc(var(--u) * 4.5);
   background: var(--paper); border: 3px solid var(--ink);
   border-radius: 6px 18px 8px 22px / 18px 8px 22px 6px;
@@ -129,7 +154,7 @@ h1 span:last-child { transform: rotate(2deg) translateX(calc(var(--u) * 9)); col
   display: flex; flex-direction: column; align-items: center; gap: max(8px, calc(var(--u) * 2));
   text-align: center;
 }
-.card.narrow { width: auto; min-width: min(80%, 420px); }
+.card.narrow { width: auto; min-width: min(80%, 420px); max-width: min(94%, 640px); }
 h2 { margin: 0; font-size: max(24px, calc(var(--u) * 8)); }
 .hint { margin: 0; font-size: max(14px, calc(var(--u) * 3.8)); }
 .hint.small { font-size: max(13px, calc(var(--u) * 3.2)); opacity: .8; }
@@ -149,8 +174,9 @@ h2 { margin: 0; font-size: max(24px, calc(var(--u) * 8)); }
 .spells circle.fill { fill: var(--hot); stroke: none; }
 .spells b { font-size: max(15px, calc(var(--u) * 4.2)); align-self: end; line-height: 1.1; }
 .spells span { font-size: max(12px, calc(var(--u) * 3.1)); opacity: .85; align-self: start; line-height: 1.2; }
-.ios-only { display: none; }
-.ios .ios-only { display: block; }
+.steps { margin: 0; padding-left: 1.4em; text-align: left; font-size: max(14px, calc(var(--u) * 3.8)); line-height: 1.45; }
+.steps li + li { margin-top: 6px; }
+.steps svg { width: 1.2em; height: 1.2em; vertical-align: -.2em; fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- yêu cầu xoay ngang (điện thoại dọc) ---------- */
 #rotate {
@@ -167,14 +193,30 @@ h2 { margin: 0; font-size: max(24px, calc(var(--u) * 8)); }
   #rotate { display: flex; }
 }
 
-/* màn hình rất thấp (điện thoại ngang nhỏ): menu và bảng gọn lại */
-@media (max-height: 420px) {
-  .paper { gap: 6px; padding-top: 12px; padding-bottom: 12px; }
-  .brush { display: none; }
+/* ---------- điện thoại ngang (màn thấp): bảng gọn, tiêu đề 1 dòng ---------- */
+@media (max-height: 460px) {
+  .paper { width: min(52%, 420px); gap: 8px; padding: 14px 18px 12px 22px; transform: rotate(-1deg); }
+  h1 { font-size: max(30px, calc(var(--u) * 12)); white-space: nowrap; }
+  h1 span { display: inline-block; }
+  h1 span:last-child { transform: rotate(2deg); }
+  .brush, .tag { display: none; }
+  button.big { font-size: max(20px, calc(var(--u) * 6.5)); padding: 0 18px; }
+  .lbl { display: none; }
+  #mrun { display: none; }
+  #mdog { right: 10%; bottom: 14%; }
   .card { padding: 10px 14px; gap: 6px; }
   h2 { font-size: 24px; }
+  .spells li { padding: 3px 4px; }
+}
+@media (max-height: 300px) {
+  .paper { gap: 6px; padding-top: 10px; padding-bottom: 10px; }
+  h1 { font-size: 28px; }
+  :root { --tap: 40px; }
+  button { font-size: 15px; }
+  button.big { font-size: 19px; }
 }
 @media (prefers-reduced-motion: reduce) {
   #mrun, #mg1, #mg2 { animation: none; }
   .brush path { animation: none; stroke-dashoffset: 0; }
 }
+#hud #skip { letter-spacing: 0; background: rgba(255, 255, 255, .92); }

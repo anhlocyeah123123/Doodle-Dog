@@ -1,14 +1,23 @@
 // @ts-check
-// Nhận dạng nét vẽ -> tên bùa. Thuần hình học (port từ recognize_spell của bản Python),
-// không phụ thuộc kích thước màn hình vì dùng tọa độ logic 960x540.
+// Nhận dạng nét vẽ -> tên bùa. Thuần hình học, dùng tọa độ logic 960x540.
+//
+// Ngón tay rung hơn chuột rất nhiều, nhất là khi vẽ nhỏ trên điện thoại: nét thẳng thành răng cưa,
+// tổng độ dài nét phồng lên, mỗi răng cưa trông như một "khúc gấp". Vì vậy nhận dạng đi qua 4 bước:
+//   1. lấy lại mẫu cách đều          -> vẽ nhanh/chậm như nhau
+//   2. làm mượt                       -> bớt rung tay (cảm ứng làm mượt mạnh hơn chuột)
+//   3. rút gọn Ramer–Douglas–Peucker  -> chỉ giữ các khúc gấp LỚN so với kích thước nét
+//   4. bỏ móc nhỏ ở đầu/cuối nét      -> ngón tay hay "quệt" lúc chạm xuống và lúc nhấc lên
+// rồi mới đếm số khúc gấp: 0 = đường thẳng, 1 = chữ V, ≥2 = sét. Vòng kín = tim.
+
+/** @typedef {number[]} Pt */
+/** @typedef {{touch?:boolean}} RecOpts touch: nét vẽ bằng ngón tay (rung nhiều hơn chuột) */
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const pathLen = (p) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i], p[i - 1]); return s; };
 
-/** Lấy lại mẫu nét thành n điểm cách đều -> tốc độ vẽ nhanh/chậm không ảnh hưởng kết quả. */
-function resample(p, n = 32) {
-  let total = 0;
-  for (let i = 1; i < p.length; i++) total += dist(p[i], p[i - 1]);
-  const step = total / (n - 1), out = [p[0]], q = p.slice();
+/** Lấy lại mẫu nét thành n điểm cách đều. @param {Pt[]} p */
+function resample(p, n) {
+  const step = pathLen(p) / (n - 1), out = [p[0]], q = p.slice();
   let acc = 0;
   for (let i = 1; i < q.length; i++) {
     const d = dist(q[i - 1], q[i]);
@@ -21,47 +30,118 @@ function resample(p, n = 32) {
     } else acc += d;
   }
   while (out.length < n) out.push(p[p.length - 1]);
+  out.length = n;
   return out;
 }
 
+/** Làm mượt bằng nhân [1 2 1]/4, giữ nguyên 2 đầu. @param {Pt[]} p */
+function smooth(p, passes) {
+  for (let k = 0; k < passes; k++) {
+    const q = p.map((v) => v.slice());
+    for (let i = 1; i < p.length - 1; i++) {
+      q[i][0] = (p[i - 1][0] + 2 * p[i][0] + p[i + 1][0]) / 4;
+      q[i][1] = (p[i - 1][1] + 2 * p[i][1] + p[i + 1][1]) / 4;
+    }
+    p = q;
+  }
+  return p;
+}
+
+/** Khoảng cách từ điểm p tới đoạn ab. */
+function segDist(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+  const t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0;
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+}
+
+/** Ramer–Douglas–Peucker: giữ các điểm lệch khỏi đường nối > eps. @param {Pt[]} p */
+function rdp(p, eps) {
+  const keep = new Uint8Array(p.length);
+  keep[0] = keep[p.length - 1] = 1;
+  const stack = [[0, p.length - 1]];
+  while (stack.length) {
+    const [i, j] = /** @type {number[]} */ (stack.pop());
+    let far = -1, best = eps;
+    for (let k = i + 1; k < j; k++) { const d = segDist(p[k], p[i], p[j]); if (d > best) { best = d; far = k; } }
+    if (far >= 0) { keep[far] = 1; stack.push([i, far], [far, j]); }
+  }
+  return p.filter((_, i) => keep[i]);
+}
+
+/** cos góc đổi hướng tại b (1 = đi thẳng, -1 = quay ngược). */
+function turnCos(a, b, c) {
+  const ux = b[0] - a[0], uy = b[1] - a[1], vx = c[0] - b[0], vy = c[1] - b[1];
+  return (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy) || 1);
+}
+
+const N = 64;           // số điểm sau khi lấy lại mẫu
+const MIN_SIZE = 40;    // khung nét nhỏ hơn -> bỏ qua (chạm nhầm)
 const CLOSED = 0.25;    // đầu-cuối gần nhau (< 25% độ dài nét) -> vòng kín = tim
-const STRAIGHT = 1.25;  // độ dài nét / khoảng cách đầu-cuối < 1.25 -> đường thẳng
-const AXIS = 3;         // lệch trục gấp 3 lần -> ngang/dọc, còn lại là chéo
-const TURN = 0.3;       // cos góc giữa 2 đoạn < 0.3 (≈ > 72°) -> một khúc gấp
+const STRAIGHT = 1.2;   // độ dài nét (đã làm mượt) / khoảng cách đầu-cuối < 1.2 -> chắc chắn thẳng
+const TURN = 0.3;       // cos góc đổi hướng < 0.3 (≈ > 72°) -> một khúc gấp thật
+const HOOK = 0.18;      // đoạn đầu/cuối ngắn hơn 18% khung nét -> móc tay, bỏ
+
+/** Thông số theo thiết bị: ngón tay rung hơn chuột -> làm mượt mạnh hơn, rút gọn thô hơn, nới góc ngang/dọc. */
+const TUNE = {
+  mouse: { passes: 1, eps: 0.09, axis: 3 },     // lệch trục gấp 3 lần (< ~18°) -> ngang/dọc
+  touch: { passes: 3, eps: 0.13, axis: 2.5 },   // < ~22°
+};
 
 /**
- * @param {number[][]} raw các điểm [x, y]
+ * Rút nét về khung xương: vài đỉnh nối bằng đoạn thẳng.
+ * @param {Pt[]} p đã lấy mẫu + làm mượt
+ * @param {number} size đường chéo khung nét
+ */
+function skeleton(p, size, eps) {
+  let s = rdp(p, size * eps);
+  const minSeg = size * HOOK;
+  // bỏ móc ở 2 đầu
+  while (s.length > 2 && dist(s[0], s[1]) < minSeg) s.shift();
+  while (s.length > 2 && dist(s[s.length - 1], s[s.length - 2]) < minSeg) s.pop();
+  // gộp 2 đỉnh quá gần nhau (góc bo tròn) và bỏ đỉnh gần như thẳng hàng
+  for (let changed = true; changed && s.length > 2;) {
+    changed = false;
+    for (let i = 1; i < s.length - 1; i++) {
+      if (turnCos(s[i - 1], s[i], s[i + 1]) >= TURN) { s.splice(i, 1); changed = true; break; }
+      if (i < s.length - 2 && dist(s[i], s[i + 1]) < minSeg * 0.6) {
+        s.splice(i, 2, [(s[i][0] + s[i + 1][0]) / 2, (s[i][1] + s[i + 1][1]) / 2]);
+        changed = true; break;
+      }
+    }
+  }
+  return s;
+}
+
+/**
+ * @param {Pt[]} raw các điểm [x, y]
+ * @param {RecOpts} [opts]
  * @returns {import('./config.js').Spell|null}
  */
-export function recognize(raw) {
+export function recognize(raw, opts = {}) {
   if (raw.length < 6) return null;
-  let len = 0;
-  for (let i = 1; i < raw.length; i++) len += dist(raw[i], raw[i - 1]);
-  if (len < 50) return null;
+  const T = opts.touch ? TUNE.touch : TUNE.mouse;
+  const p = smooth(resample(raw, N), T.passes);
 
-  const p = resample(raw), a = p[0], z = p[p.length - 1], d = dist(a, z);
-  const xs = p.map((v) => v[0]), ys = p.map((v) => v[1]);
-  const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, y] of p) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+  const w = maxX - minX, h = maxY - minY, size = Math.hypot(w, h);
+  if (size < MIN_SIZE) return null;
 
+  const len = pathLen(p), a = p[0], z = p[N - 1], d = dist(a, z);
   if (d < len * CLOSED && w > 30 && h > 30) return 'HEART';
 
-  if (len / (d || 1) < STRAIGHT) {
-    const dx = Math.abs(z[0] - a[0]), dy = Math.abs(z[1] - a[1]);
-    if (dx > dy * AXIS) return 'HORIZONTAL';
-    if (dy > dx * AXIS) return 'VERTICAL';
+  const s = len / (d || 1) < STRAIGHT ? [a, z] : skeleton(p, size, T.eps);
+  const corners = s.length - 2;
+
+  if (corners <= 0) {
+    const A = s[0], Z = s[s.length - 1];
+    const dx = Math.abs(Z[0] - A[0]), dy = Math.abs(Z[1] - A[1]);
+    if (dx > dy * T.axis) return 'HORIZONTAL';
+    if (dy > dx * T.axis) return 'VERTICAL';
     return 'DIAGONAL';
   }
-
-  let turns = 0, corner = a;   // đếm khúc gấp
-  for (let i = 3; i < p.length - 3; i++) {
-    const u = [p[i][0] - p[i - 3][0], p[i][1] - p[i - 3][1]];
-    const v = [p[i + 3][0] - p[i][0], p[i + 3][1] - p[i][1]];
-    const cos = (u[0] * v[0] + u[1] * v[1]) / (Math.hypot(u[0], u[1]) * Math.hypot(v[0], v[1]) || 1);
-    if (cos < TURN) { turns++; corner = p[i]; i += 3; }
-  }
-  if (turns >= 2) return 'LIGHTNING';
-  if (turns === 1) return corner[1] < (a[1] + z[1]) / 2 ? 'HAT_UP' : 'HAT_DOWN';
-  return null;
+  if (corners >= 2) return 'LIGHTNING';
+  return s[1][1] < (s[0][1] + s[2][1]) / 2 ? 'HAT_UP' : 'HAT_DOWN';
 }
 
 /**

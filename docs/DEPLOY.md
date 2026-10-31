@@ -16,6 +16,14 @@ Import an existing project → chọn repo. Build command: để trống. Publis
 **Cách 3 – dòng lệnh:** `npx netlify-cli deploy --dir=web --prod`
 
 Cloudflare Pages / GitHub Pages / Vercel cũng được: thư mục xuất bản `web`, không lệnh build.
+File `web/_headers` (không cache `sw.js`) được cả Cloudflare lẫn Netlify đọc.
+
+## Toàn màn hình trên điện thoại
+
+- **Android / iPad / PC:** bấm "Chơi ngay" trên điện thoại Android là tự vào toàn màn hình và khóa ngang; nút ⛶ ở góc menu.
+- **iPhone:** Safari không cho web tự bật toàn màn hình. Nút ⛶ mở hướng dẫn: *Chia sẻ → Thêm vào MH chính*
+  (mở từ biểu tượng là kín màn hình như ứng dụng), hoặc *aA → Ẩn thanh công cụ*.
+- Khi đang chơi trang bị khóa: không cuộn, không kéo-để-tải-lại, không phóng to 2 ngón/chạm đúp (`lockPage()` trong `engine/input.js`).
 
 ## Âm thanh trên điện thoại – đã xử lý gì
 

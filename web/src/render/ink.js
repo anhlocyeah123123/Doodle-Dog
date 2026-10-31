@@ -17,16 +17,20 @@ function polyline(c, pts, off, k) {
   for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0] + off * jitter(i, k), pts[i][1] + off * jitter(i, k + 1));
 }
 
-/** Nét người chơi đang vẽ: 3 lệnh vẽ cho cả nét (thay vì 3 lệnh cho MỖI đoạn). */
-export function inkStroke(c, pts, alpha = 1) {
+/**
+ * Nét người chơi đang vẽ: 3 lệnh vẽ cho cả nét (thay vì 3 lệnh cho MỖI đoạn).
+ * k = hệ số độ dày: trên điện thoại khung game nhỏ nên nét 10px logic chỉ còn ~5px thật, mảnh và khó nhìn
+ * dưới ngón tay -> lớp vẽ truyền k > 1 để nét luôn dày ít nhất ~7px trên màn hình (xem strokeK ở draw.js).
+ */
+export function inkStroke(c, pts, alpha = 1, k = 1) {
   if (pts.length < 2 || alpha <= 0) return;
   c.save();
   c.globalAlpha = alpha;
   c.lineCap = c.lineJoin = 'round';
   polyline(c, pts, 0, 0);
-  c.strokeStyle = 'rgba(255,255,255,.92)'; c.lineWidth = 16; c.stroke();
-  c.strokeStyle = INK; c.lineWidth = 10; c.stroke();
-  if (!ink.low) { polyline(c, pts, 1.6, 3); c.strokeStyle = INK2; c.lineWidth = 4; c.stroke(); }
+  c.strokeStyle = 'rgba(255,255,255,.92)'; c.lineWidth = 16 * k; c.stroke();
+  c.strokeStyle = INK; c.lineWidth = 10 * k; c.stroke();
+  if (!ink.low) { polyline(c, pts, 1.6 * k, 3); c.strokeStyle = INK2; c.lineWidth = 4 * k; c.stroke(); }
   c.restore();
 }
 
