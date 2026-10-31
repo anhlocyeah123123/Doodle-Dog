@@ -1,0 +1,16 @@
+# Web tĩnh: không cần lệnh build, chỉ xuất bản thư mục web/
+[build]
+  publish = "web"
+
+# Asset giữ tên cố định nên KHÔNG đặt cache dài ngày: Netlify mặc định kiểm tra ETag
+# (trả 304 rất nhanh) -> người chơi luôn nhận bản mới sau khi deploy.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

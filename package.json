@@ -1,0 +1,15 @@
+{
+  "name": "doodle-dog",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Web game vẽ bùa đuổi ma (Canvas 2D, không framework, không bước build)",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node tests/test.js",
+    "balance": "node tests/balance.js",
+    "typecheck": "npx -y -p typescript@5 tsc -p jsconfig.json",
+    "check": "npm run typecheck && npm test",
+    "assets": "python3 tools/build_assets.py"
+  }
+}
