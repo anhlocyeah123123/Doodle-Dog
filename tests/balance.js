@@ -48,10 +48,11 @@ export function play(level, p, seed) {
     if (pal && foes.length >= 2 && rand() < 0.5) { busy = 0.4; sim.usePal(pal.who); continue; }
     let spell = null, target = null;
     const canBolt = hasSpell(sim.level, 'LIGHTNING') && sim.boltCd === 0;
-    if (canBolt && (foes.length >= 3 || sim.syms.length >= 2 || foes.some((g) => g.seq[g.i] === 'LIGHTNING'))) spell = 'LIGHTNING';
+    if (canBolt && sim.gloom > 0) spell = 'LIGHTNING';   // nến tắt: thắp sáng trước
+    else if (canBolt && (foes.length >= 3 || sim.syms.length >= 2 || foes.some((g) => g.seq[g.i] === 'LIGHTNING'))) spell = 'LIGHTNING';
     else if (heal && sim.hp <= 3) spell = 'HEART';
     else if (foes.length) {
-      const ok = foes.filter((g) => g.seq[g.i] !== 'LIGHTNING' || canBolt);   // ma khiên: chờ sét hồi
+      const ok = foes.filter((g) => (g.seq[g.i] !== 'LIGHTNING' || canBolt) && (sim.gloom <= 0 || g.boss));   // nến tắt: không thấy ký hiệu ma thường   // ma khiên: chờ sét hồi
       if (ok.length) {
         const near = ok.reduce((a, b) => (Math.hypot(a.x - CX, a.y - 385) < Math.hypot(b.x - CX, b.y - 385) ? a : b));
         spell = near.seq[near.i]; target = near;
@@ -59,7 +60,8 @@ export function play(level, p, seed) {
     } else if (heal && sim.hp < BAL.hp) spell = 'HEART';
     if (!spell) continue;
     busy = p.draw * (0.8 + rand() * 0.4);
-    if (rand() < p.acc) sim.cast(spell, target && p.aim ? aimAt(spell, target, rand) : null);
+    const acc = p.acc - (target?.inv ? 0.12 : 0);   // ký hiệu đảo: dễ vẽ nhầm hơn
+    if (rand() < acc) sim.cast(spell, target && p.aim ? aimAt(spell, target, rand) : null); else sim.cast(spell === 'HORIZONTAL' ? 'VERTICAL' : 'HORIZONTAL');
   }
   hpLeft += sim.cleared || sim.won ? sim.hp : 0;
   return sim.cleared || sim.won;

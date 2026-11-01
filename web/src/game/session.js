@@ -6,12 +6,13 @@
 //                                     ├─ hết máu ──> over  ──(chạm)──> intro màn đó
 //                                     ├─ hạ boss màn 1–4 ──> page (nhặt trang sách, học bùa mới) ──> [bài học của Cô Cú] ──> intro màn sau
 //                                     └─ hạ Vua Mực ──> outro (phép tối thượng) ──> bảng chiến thắng ──> tbc (còn tiếp…) ──> menu
-import { CX, GY, CY, BAL, LEVELS, LAST, SPELL_ANIM, DEFAULT_CAST_ANIM, palsAt } from '../core/config.js';
+import { CX, GY, CY, BAL, LEVELS, LAST, SPELL_ANIM, DEFAULT_CAST_ANIM, SPELL_COLOR, palsAt, starsOf } from '../core/config.js';
 import { Sim } from '../core/sim.js';
 import { recognize, strokeGeometry } from '../core/recognizer.js';
 import { Effects } from './effects.js';
 import { audio } from '../engine/audio.js';
 import { bolt } from '../render/ink.js';
+import { slashFx } from '../render/sigil.js';
 import { CUES, DURATION } from '../render/cutscene.js';
 import { OUTRO_CUES, OUTRO_FIRE, OUTRO_HIT, OUTRO_DUR, TIMESTOP_END } from '../render/outro.js';
 import { Tutorial, LESSONS } from './tutorial.js';
@@ -65,6 +66,12 @@ const CUE_SOUND = {
   },
 };
 
+/** Sao tốt nhất từng màn (hiện ở nút chọn màn). */
+export const bestStars = {
+  get(l) { try { return Number(localStorage.getItem('dd-star' + l)) || 0; } catch { return 0; } },
+  set(l, n) { try { if (n > this.get(l)) localStorage.setItem('dd-star' + l, String(n)); } catch { /* bỏ qua */ } },
+};
+
 export const progress = {
   get() { try { return Number(localStorage.getItem('dd-lv')) || 1; } catch { return 1; } },
   set(l) { try { if (l > this.get()) localStorage.setItem('dd-lv', String(Math.min(l, LAST))); } catch { /* bỏ qua */ } },
@@ -74,7 +81,7 @@ export class Session {
   /**
    * @param {import('../engine/assets.js').Assets} A
    * @param {{pts:number[][], down:boolean, fade:number, touch:boolean}} trail
-   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void, onSkippable:(on:boolean)=>void, onOutro:()=>void, onVictory:(score:number)=>void, onTimeStop:(on:boolean)=>void}} hooks
+   * @param {{onBackground:(bg:string)=>void, onMenu:()=>void, onSkippable:(on:boolean)=>void, onOutro:()=>void, onVictory:(score:number, stars:number, res:{hpLost:number, maxChain:number})=>void, onTimeStop:(on:boolean)=>void}} hooks
    */
   constructor(A, trail, hooks) {
     this.A = A;
@@ -96,7 +103,7 @@ export class Session {
     this.tutEnd = 0;   // đếm ngược từ lúc học xong tới màn 1
     /** @type {{t:number, bx:number, by:number, dir:number, cue:number, hit:boolean, shown:boolean, stop:boolean}|null} */
     this.outro = null; // đoạn kết sau khi hạ boss cuối
-    /** @type {{t:number, level:number, bx:number, by:number, pals:string[], bg:boolean, hp:number, score:number}|null} */
+    /** @type {{t:number, level:number, bx:number, by:number, pals:string[], bg:boolean, hp:number, score:number, stars:number, res:{hpLost:number, maxChain:number}}|null} */
     this.page = null;  // đoạn nhặt trang sách sau boss màn 1–4
     /** @type {{t:number, bx:number, by:number, pals:string[], cue:number, shown:boolean}|null} */
     this.ending = null;
@@ -249,7 +256,9 @@ export class Session {
       else if (this.missT <= 0) { this.fx.toast('Chưa nhận ra bùa — vẽ dứt khoát hơn nhé', 'warn', 1.6); this.missT = 4; }
       return;
     }
-    const ok = sim.cast(/** @type {any} */ (s), strokeGeometry(pts));
+    const geo = strokeGeometry(pts);
+    const ok = sim.cast(/** @type {any} */ (s), geo);
+    if (ok) { const sl = slashFx(s, geo, fxId++); if (sl) this.fx.add(sl); }   // trúng: vệt chém phủ cả màn hình theo hình bùa
     const a = SPELL_ANIM[s] || DEFAULT_CAST_ANIM;
     this.fx.add({ t: 'sigil', x: this.dog.x, y: SIGIL_Y, s, ok, id: fxId++, pts: thin(pts), rate: SIGIL_RATE });
     this.anim(a, this.clip(a));
@@ -276,7 +285,10 @@ export class Session {
         case 'wave':
           fx.toast(e.boss ? `⚠ ${sim.cfg.boss?.name || 'BOSS'} xuất hiện!` : `Đợt ma ${e.n}/${e.of}!`, e.boss ? 'boss' : 'warn');
           this.alertT = 1.4;
-          if (e.boss) { fx.shake = 0.5; audio.sfx('4', 0.5, 0.6); if (sim.cfg.boss?.king) CUE_SOUND.laugh(); }
+          if (e.boss) {
+            fx.shake = 0.5; audio.sfx('4', 0.5, 0.6); if (sim.cfg.boss?.king) CUE_SOUND.laugh();
+            if (sim.cfg.boss?.hint && !sim.cfg.boss.king) fx.toast(sim.cfg.boss.hint, 'info', 4.5);
+          }
           break;
         case 'healspawn':
           if (!this.tut) fx.toast('Ma trái tim xuất hiện — vẽ ♥ để hồi máu', 'info', 3);
@@ -302,7 +314,7 @@ export class Session {
           fx.toast('+1 máu!', 'info', 1.4);
           audio.arp([1.5, 2]);
           break;
-        // 'cast' (bùa trúng những con nào): không vẽ tia nối — mỗi con trúng tự nổ tung tại chỗ qua 'kill' / 'step'
+        // 'cast': vệt chém phủ cả màn hình đã thêm ở stroke() (1 vệt cho cả nét, không vẽ riêng từng con ma)
         case 'combo':
           fx.toast(`Combo x${e.n}! +${BAL.comboBonus * (e.n - 1)}`, 'info', 1.3);
           audio.sfx('3', 0.22, 1.68, 0.09);   // combo: thêm 1 nốt nhẹ, không dồn cả chuỗi
@@ -324,7 +336,7 @@ export class Session {
           fx.burst(e.x, e.y, 8, ['#14a89c', '#fff']);
           audio.sfx('3', 0.35, 0.7);
           break;
-        case 'phase': fx.toast('Boss nổi giận!', 'boss'); fx.shake = 0.5; audio.sfx('4', 0.5, 0.5); break;
+        case 'phase': if (sim.cfg.boss?.king) fx.toast(sim.cfg.boss.hint, 'info', 5); fx.toast('Boss nổi giận!', 'boss'); fx.shake = 0.5; audio.sfx('4', 0.5, 0.5); break;
         case 'finale': this.startOutro(e.x, e.y); break;
         case 'pop': fx.burst(e.x, e.y, 8, ['#fff', '#ffd23f']); break;
         case 'hit':
@@ -349,6 +361,33 @@ export class Session {
           killSnd = true;
           break;
         case 'throw': audio.sfx('3', 0.25, 0.5); break;
+        case 'chain':
+          if (!this.tut) { fx.toast(`Chuỗi ${e.n}! Điểm x${e.mult}`, 'info', 1.3); audio.sfx('3', 0.3, 1.5 + e.mult * 0.25); }
+          break;
+        case 'chainbreak':
+          if (!this.tut) fx.toast(`Mất chuỗi ${e.n}…`, 'warn', 1.1);
+          break;
+        case 'flip':   // Ma Sách lật trang: ký hiệu đổi
+          fx.burst(e.x, e.y - 60, 10, ['#fbf7ec', '#1b1bb8']);
+          audio.sfx('3', 0.35, 0.75);
+          break;
+        case 'gloom':
+          fx.toast('Nến tắt! Vẽ SÉT để thắp sáng', 'boss', 1.8);
+          audio.sfx('4', 0.35, 0.5);
+          break;
+        case 'light':
+          fx.toast('Thắp sáng rồi!', 'info', 1);
+          fx.flash = 0.25;
+          break;
+        case 'heads':
+          fx.burst(e.x, e.y + 40, 12, ['#ff9a3c', '#1b1bb8']);
+          audio.sfx('3', 0.3, 0.6);
+          break;
+        case 'brew':
+          fx.add({ t: 'star', x0: e.bx, y0: e.by, x1: e.x, y1: e.y, rate: 3, col: '#5fdc7a' });
+          fx.burst(e.x, e.y, 10, ['#5fdc7a', '#fff']);
+          audio.sfx('3', 0.3, 0.55);
+          break;
         case 'dark':
           fx.toast('Vua Mực tắt đèn! Cứ vẽ tiếp đi!', 'boss', 1.6);
           audio.sfx('4', 0.6, 0.45);
@@ -389,7 +428,12 @@ export class Session {
       while (o.cue < OUTRO_CUES.length && OUTRO_CUES[o.cue][0] <= o.t) CUE_SOUND[OUTRO_CUES[o.cue++][1]]?.();
       if (o.stop && o.t >= TIMESTOP_END) { o.stop = false; this.hooks.onTimeStop(false); }
       if (!o.hit && o.t >= OUTRO_HIT) { o.hit = true; this.sim?.finishBoss(); progress.set(LAST); }
-      if (!o.shown && o.t >= OUTRO_DUR) { o.shown = true; this.hooks.onVictory(this.sim?.score ?? 0); }
+      if (!o.shown && o.t >= OUTRO_DUR) {
+        o.shown = true;
+        const sim = /** @type {Sim} */ (this.sim), st = starsOf(sim.result);
+        bestStars.set(sim.level, st);
+        this.hooks.onVictory(sim.score, st, sim.result);
+      }
       return;
     }
     if (this.state === 'page' && this.page) {
@@ -477,7 +521,9 @@ export class Session {
     const sim = /** @type {Sim} */ (this.sim);
     progress.set(sim.level + 1);
     this.state = 'page';
-    this.page = { t: 0, level: sim.level, bx: this.lastBoss.x, by: this.lastBoss.y, pals: palsAt(sim.level), bg: false,
+    const stars = starsOf(sim.result);
+    bestStars.set(sim.level, stars);
+    this.page = { t: 0, level: sim.level, bx: this.lastBoss.x, by: this.lastBoss.y, pals: palsAt(sim.level), bg: false, stars, res: sim.result,
       hp: Math.min(BAL.hp, sim.hp + 1), score: sim.score };
     this.trail.pts = []; this.trail.down = false;
     this.fx.reset(); this.msg = null;

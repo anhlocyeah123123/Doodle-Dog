@@ -109,10 +109,11 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
 
     <section id="victory" class="sheet" hidden>
       <div class="card narrow vcard">
-        <div class="stars" aria-hidden="true">✦ ✧ ✦</div>
+        <div class="stars vstars" id="vStars" aria-label="Số sao">★★★</div>
         <h2>Bạn đã chiến thắng!</h2>
         <p class="hint">Cún đã hạ Vua Mực và lấy lại đủ 5 trang sách phép.</p>
         <p class="vscore">Điểm: <b id="vScore">0</b></p>
+        <p class="hint small" id="vRes"></p>
         <p class="hint small vbest">Kỷ lục của bạn: <b id="vBest">0</b> <span id="vNew" hidden>· 🎉 Kỷ lục mới!</span></p>
         <div class="row">
           <button id="vShare">📤 Khoe điểm với bạn bè</button>

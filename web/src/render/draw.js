@@ -1,11 +1,11 @@
 // @ts-check
 // Chỉ VẼ: đọc trạng thái (sim + hiệu ứng) và vẽ lên canvas. Không thay đổi trạng thái game.
 // Ảnh nền là CSS phía sau canvas trong suốt -> trình duyệt tự ghép, không tốn công vẽ lại mỗi khung.
-import { W, GY, CX, CY, GLYPH, BAL, BOSSES, hasSpell } from '../core/config.js';
+import { W, GY, CX, CY, GLYPH, BAL, BOSSES, hasSpell, MIRROR } from '../core/config.js';
 import { INK, ink, inkStroke, inkText, inkHeart, bubble } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
-import { drawSigil, drawBeam, drawArea } from './sigil.js';
+import { drawSigil, drawBeam, drawArea, drawSweep } from './sigil.js';
 import { VIEW, uiK, safeCx } from './view.js';
 import { drawDemo, drawBanner } from './guide.js';
 
@@ -55,6 +55,9 @@ export const invAlpha = (g, t) => {
   return 0.12 + 0.88 * Math.max(0, Math.min(1, v * 1.6 + 0.35));
 };
 
+/** Nến tắt (Ma Đèn Chùm): giây còn lại — set mỗi khung trong draw(). */
+let GLOOM = 0;
+
 function drawGhost(c, A, g, t, st) {
   const y = g.y + Math.sin(t * 3 + g.id) * 6;
   if (g.heal) {
@@ -77,6 +80,10 @@ function drawGhost(c, A, g, t, st) {
       const gs = A.sprites.boss;
       if (gs?.img) { const f = ((t * gs.fps) | 0) % gs.n; c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, g.x - gs.w * 1.2, y - gs.h * 1.2, gs.w * 2.4, gs.h * 2.4); box = { w: gs.w * 2.4, h: gs.h * 2.4 }; }
     }
+  } else if (g.kind === 'head' && A.sprites.drop_pumpkin?.img) {   // bí ngô con của Ma Bí Ngô
+    c.save(); c.translate(g.x, y); c.rotate(Math.sin(t * 4 + g.id) * 0.25);
+    box = drawCentered(c, A, 'drop_pumpkin', t + g.id * 0.2, 0, 0, 1.25);
+    c.restore();
   } else if (g.kind === 'knight' && A.sprites.knight_fly?.img) {
     if (!g.brk) box = drawCentered(c, A, 'knight_fly', t + g.id * 0.13, g.x, y, g.sz, g.vx < 0);
     else {
@@ -108,14 +115,26 @@ function drawGhost(c, A, g, t, st) {
     const cxRow = Math.min(Math.max(g.x, VIEW.sx - VIEW.ox + half + 30), VIEW.sx + VIEW.sw - VIEW.ox - half - 40);
     const x0 = cxRow - half;
     for (let i = 0; i < n; i++) {
-      const done = i < g.i, cur = i === g.i;
-      bubble(c, x0 + i * gap, by, cur ? 19 : 15, GLYPH[g.seq[i]], done ? '#aaa' : INK, cur ? '#ffe066' : done ? '#ddd' : '#fff');
+      const done = i < g.i, cur = i === g.i, q = g.seq[i];
+      const shown = g.inv ? MIRROR[q] || q : q;   // Vua Mực pha 2: hiện ký hiệu ĐẢO
+      bubble(c, x0 + i * gap, by, cur ? 19 : 15, GLYPH[shown], done ? '#aaa' : g.inv ? '#c0142f' : INK, cur ? (g.inv ? '#ffc9d2' : '#ffe066') : done ? '#ddd' : '#fff');
+      if (cur && g.kind === 'book' && g.flipAt != null && !g.ent) {   // Ma Sách: vòng đếm ngược trước khi ký hiệu tự đổi
+        const left = Math.max(0, Math.min(1, (g.flipAt - st) / BAL.bookFlip));
+        c.strokeStyle = left < 0.3 ? '#e2283c' : '#d8430f'; c.lineWidth = 4;
+        c.beginPath(); c.arc(x0 + i * gap, by, 25, -Math.PI / 2, -Math.PI / 2 + TAU * left); c.stroke();
+      }
     }
+    if (g.inv) inkText(c, 'ĐẢO! vẽ ngược lại', cxRow, by + 40, 18, 'center', '#c0142f');
   } else if (alpha > 0.45) {   // ma tàng hình: lúc ẩn thì ký hiệu cũng ẩn
     const r = Math.round(19 * Math.min(1.35, uiK()) * (g.kind === 'swarm' ? 0.85 : 1));   // màn nhỏ: ký hiệu to hơn cho dễ đọc
     c.globalAlpha = alpha;
     const sym = g.seq[g.i];
-    bubble(c, g.x, top - r + 7, r, GLYPH[sym], sym === 'LIGHTNING' ? '#d99a00' : INK, sym === 'LIGHTNING' ? '#fff3b0' : '#fff');
+    if (g.brewT != null && st - g.brewT < 1.4) {   // vừa uống thuốc của Phù Thủy: quầng xanh lá
+      c.strokeStyle = `rgba(80,220,120,${1 - (st - g.brewT) / 1.4})`; c.lineWidth = 6;
+      c.beginPath(); c.arc(g.x, y, box.w * 0.45 + (st - g.brewT) * 20, 0, TAU); c.stroke();
+    }
+    if (GLOOM > 0 && sym !== 'LIGHTNING') bubble(c, g.x, top - r + 7, r, '?', '#777', '#cfcfe0');   // nến tắt: ký hiệu bị che
+    else bubble(c, g.x, top - r + 7, r, GLYPH[sym], sym === 'LIGHTNING' ? '#d99a00' : INK, sym === 'LIGHTNING' ? '#fff3b0' : '#fff');
     const left = g.seq.length - g.i - 1;
     if (left > 0) inkText(c, '+' + left, g.x + 22, top - 2, 16);
     c.globalAlpha = 1;
@@ -247,6 +266,8 @@ function drawFx(c, f) {
     drawBeam(c, f);
   } else if (f.t === 'area') {
     drawArea(c, f);
+  } else if (f.t === 'sweep') {
+    drawSweep(c, f);
   } else if (f.t === 'bolt') {
     c.globalAlpha = al;
     c.beginPath();
@@ -266,12 +287,14 @@ function drawFx(c, f) {
       blitSprite(c, f.A, f.name, Math.min(s.n - 1, (k * s.n) | 0), f.x, f.y, (f.sc || 1) * pop, !!f.flip, 'c');
       c.globalAlpha = 1;
     }
+  } else if (f.t === 'slash') {
+    drawSlash(c, f, k);
   } else if (f.t === 'star') {   // Mèo Mun phóng sao tới con ma
     const x = f.x0 + (f.x1 - f.x0) * k, y = f.y0 + (f.y1 - f.y0) * k - Math.sin(k * Math.PI) * 60;
     c.save(); c.translate(x, y); c.rotate(k * 9);
     c.beginPath();
     for (let i = 0; i < 10; i++) { const r = i % 2 ? 7 : 16, a = (i / 10) * TAU - Math.PI / 2; i ? c.lineTo(Math.cos(a) * r, Math.sin(a) * r) : c.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
-    c.closePath(); c.fillStyle = '#ffe066'; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke();
+    c.closePath(); c.fillStyle = f.col || '#ffe066'; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke();
     c.restore();
   } else if (f.t === 'tongue') {   // Ếch Ộp lè lưỡi
     const r = k < 0.5 ? k * 2 : (1 - k) * 2;
@@ -286,6 +309,54 @@ function drawFx(c, f) {
     }
     c.globalAlpha = 1;
   }
+}
+
+/** Hình vết chém theo ký hiệu, quanh tâm (0,0), cỡ ~1 con ma. */
+const SLASH = {
+  HORIZONTAL: [[-80, 4], [80, -4]],
+  VERTICAL: [[4, -80], [-4, 80]],
+  DIAGONAL: [[-62, 62], [62, -62]],
+  HAT_UP: [[-55, 45], [0, -50], [55, 45]],
+  HAT_DOWN: [[-55, -45], [0, 50], [55, -45]],
+};
+
+/**
+ * Vết chém ngay trên con ma trúng bùa: nét quét nhanh (35% đầu) rồi mờ + tách đôi ra 2 bên như bị cắt.
+ * Ngắn (~0.4s), chỉ quanh con ma -> diệt nhiều con cùng lúc vẫn gọn mắt.
+ */
+function drawSlash(c, f, k) {
+  const P = SLASH[f.s];
+  if (!P) return;
+  const draw = Math.min(1, k / 0.35), fade = k < 0.45 ? 1 : 1 - (k - 0.45) / 0.55;
+  const L = P.length - 1, upto = draw * L;
+  const pts = [P[0]];
+  for (let i = 0; i < L && i < upto; i++) {
+    const q = Math.min(1, upto - i);
+    pts.push([P[i][0] + (P[i + 1][0] - P[i][0]) * q, P[i][1] + (P[i + 1][1] - P[i][1]) * q]);
+  }
+  const line = (w, col, ox = 0, oy = 0) => {
+    c.beginPath();
+    pts.forEach((p, i) => (i ? c.lineTo(p[0] + ox, p[1] + oy) : c.moveTo(p[0] + ox, p[1] + oy)));
+    c.strokeStyle = col; c.lineWidth = w; c.stroke();
+  };
+  c.save();
+  c.translate(f.x, f.y); if (f.flip && (f.s === 'HORIZONTAL' || f.s === 'DIAGONAL')) c.scale(-1, 1);
+  c.lineCap = c.lineJoin = 'round';
+  c.globalAlpha = fade;
+  // quầng màu bùa + lõi trắng + viền mực
+  const thin = 1 - Math.max(0, k - 0.35) * 0.9;   // nét mảnh dần như lưỡi dao
+  line(22 * thin, f.col + '55');
+  line(11 * thin, '#fff');
+  line(4 * thin, f.col);
+  // dư ảnh tách đôi (sau khi quét xong)
+  if (k > 0.35) {
+    const sp = (k - 0.35) * 26, [a, b] = [P[0], P[L]];
+    const nx = -(b[1] - a[1]), ny = b[0] - a[0], nl = Math.hypot(nx, ny) || 1;
+    c.globalAlpha = fade * 0.5;
+    line(2.5, INK, (nx / nl) * sp, (ny / nl) * sp);
+    line(2.5, INK, (-nx / nl) * sp, (-ny / nl) * sp);
+  }
+  c.restore();
 }
 
 function drawToast(c, o, i) {
@@ -314,6 +385,7 @@ function drawHud(c, sim, title = true) {
   c.save(); c.translate(VIEW.sx, VIEW.sy); c.scale(k, k);
   for (let i = 0; i < BAL.hp; i++) inkHeart(c, 36 + i * 40, 38, 16, i < sim.hp ? '#ff6b9a' : 'rgba(255,255,255,.3)');
   inkText(c, String(sim.score), 22, 92, 30);
+  if (sim.chain >= 2) inkText(c, `Chuỗi ${sim.chain}${sim.mult > 1 ? ` · x${sim.mult}` : ''}`, 22 + measure(`bold 30px ${FONT}`, String(sim.score)) + 22, 88, 20, 'left', sim.mult > 1 ? '#d8430f' : INK);
   if (title) inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, VIEW.sw / 2 / k, 40, 24, 'center');
   if (hasSpell(sim.spellLv, 'LIGHTNING')) {
     const r = 1 - sim.boltCd / BAL.boltCd;   // thanh hồi chiêu sét
@@ -350,6 +422,15 @@ function drawPanel(c, msg) {
   c.save(); c.translate(0, VIEW.sy + VIEW.sh / 2); c.scale(k, k);
   blit(c, e, 0, -80);
   c.restore();
+}
+
+/** Nến tắt: màn hình tối, chỉ còn quầng sáng quanh Cún (ký hiệu ma thường bị che, xem drawGhost). */
+function drawGloom(c, left, dogX) {
+  const a = Math.min(1, left * 3, (BAL.gloomSec - left) * 5);
+  const x = dogX + VIEW.ox, y = GY - 70 + VIEW.oy;
+  const g = c.createRadialGradient(x, y, 90, x, y, 330);
+  g.addColorStop(0, 'rgba(4,6,22,0)'); g.addColorStop(1, `rgba(4,6,22,${0.78 * a})`);
+  c.fillStyle = g; c.fillRect(0, 0, VIEW.w, VIEW.h);
 }
 
 /** Đồng hồ cát: màn hình ngả màu cát, mặt đồng hồ mờ quay chậm ở giữa. */
@@ -425,6 +506,7 @@ const strokeK = (touch) => (touch ? Math.max(1, 0.7 / VIEW.s) : 1);
  */
 export function draw(c, A, v) {
   const { sim, t, trail, dog, fx } = v;
+  GLOOM = sim.gloom || 0;
   c.clearRect(0, 0, VIEW.w, VIEW.h);
   c.save();
   c.translate(VIEW.ox, VIEW.oy);   // thế giới 960x540 nằm giữa khung nhìn, bám đáy
@@ -467,6 +549,7 @@ export function draw(c, A, v) {
   c.restore();
 
   if (sim.slow > 0) drawSlow(c, sim.slow, t);
+  if (GLOOM > 0) drawGloom(c, GLOOM, dog.x);
   if (sim.dark > 0) drawDark(c, A, sim.dark, dog.x);
   if (v.spot > 0) drawSpot(c, dog.x, v.spot);
   if (fx.flash > 0) { c.fillStyle = `rgba(255,255,230,${fx.flash * 2})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }

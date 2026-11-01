@@ -160,3 +160,16 @@ Nhạc nền tạm im trong đoạn kết (`audio.duck`).
 - Bài học bùa mới: thẻ "Cô Cú dạy bùa mới!" to giữa màn rồi thu lên thành băng lời dặn (`lessonIntro`, `drawLessonCard`).
 - Xem trước link (Zalo/Messenger/Facebook): thẻ `og:*` trong index.html, ảnh `assets/img/og.jpg` (1200x630, cảnh dồn phép kết liễu).
 - Bảng chiến thắng: điểm + kỷ lục (`dd-best`) + nút "Khoe điểm" (Web Share kèm ảnh điểm; không được thì chép lời mời + link).
+- Bùa trúng: vết chém đúng hình ký hiệu (─ │ ╱ ∧ ∨, màu của bùa) ngay trên TỪNG con ma trúng (fx 'slash', ~0.4s), không có tia nối từ đũa.
+- Bùa trúng: 1 vệt chém phủ CẢ màn hình theo đúng hình bùa (ngang/dọc/chéo/V/∧), đi qua chỗ người chơi vẽ (`slashFx` + `drawSweep` trong render/sigil.js).
+
+## Vệt chém
+- Bùa trúng: vệt chém phủ cả màn hình theo hình bùa, đi qua chỗ vẽ (`slashFx` + `drawSweep` trong render/sigil.js): ngang, dọc, chéo, V/∧ khổng lồ. Lướt ~0.1s rồi mờ trong ~0.35s. Không có tia nối từ đũa tới ma.
+- Vệt chém khi bùa trúng (`sigil.js slashFx/drawSweep`): ngang/dọc/chéo = đường thẳng phủ cả màn hình qua chỗ vẽ; V/∧ = chữ V khổng lồ, đỉnh ở chỗ vẽ, 2 cạnh tới mép màn. Ma vẫn nổ tại chỗ, không có tia từ đũa tới ma.
+
+- Vệt chém: nét NGANG / DỌC / CHÉO trúng ma -> vệt chém phủ cả màn hình đi qua chỗ vừa vẽ (`slashFx` -> fx `sweep`). V / ∧ không có vệt, ma nổ tại chỗ.
+
+## Chuỗi, sao, cơ chế boss
+- Chuỗi (`sim.chain`, `sim.mult`): mỗi lần vẽ trúng +1; mỗi `BAL.chainStep` lần hệ số điểm +0.5 (tối đa x3). Trượt hoặc bị cắn -> mất chuỗi.
+- Sao cuối màn (`starsOf`): ★ qua màn · ★ mất ≤ `BAL.starHp` máu · ★ chuỗi dài nhất ≥ `BAL.starChain`. Lưu sao tốt nhất `dd-star<màn>`, hiện dưới nút chọn màn; băng sao ở đầu đoạn chuyển màn; bảng chiến thắng màn 5.
+- `Sim.bossMech`: Ma Sách đổi ký hiệu hiện tại sau `bookFlip` giây (vòng đếm ngược quanh ký hiệu) · Ma Đèn Chùm tắt nến (`gloom`: ký hiệu ma thường thành "?", sét thắp lại) · Ma Bí Ngô thả 2 bí con (`kind:'head'`) mang cùng ký hiệu boss · Phù Thủy Vạc cho ma thường mọc thêm ký hiệu (`brew`) · Vua Mực pha 2 hiện ký hiệu ĐẢO (`g.inv`, `MIRROR`).

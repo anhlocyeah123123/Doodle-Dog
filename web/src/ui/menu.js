@@ -3,7 +3,7 @@
 // Không chứa luật chơi; chỉ gọi các hàm được truyền vào qua `actions`.
 import { LAST, LEVELS } from '../core/config.js';
 import { audio } from '../engine/audio.js';
-import { progress, tutorialSeen } from '../game/session.js';
+import { progress, tutorialSeen, bestStars } from '../game/session.js';
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const stage = $('stage');
@@ -144,7 +144,9 @@ export function setupUI(actions) {
     const unlocked = new URLSearchParams(location.search).has('unlock') ? LAST : progress.get();
     $('lv').innerHTML = Object.keys(LEVELS).map((l) => {
       const locked = Number(l) > unlocked;
-      return `<button data-l="${l}" ${locked ? 'disabled aria-label="Màn ' + l + ' chưa mở"' : 'aria-label="Màn ' + l + '"'}>${locked ? '🔒' : l}</button>`;
+      const st = bestStars.get(l);
+      const stars = !locked && st ? `<i class="lst">${'★'.repeat(st)}<s>${'★'.repeat(3 - st)}</s></i>` : '';
+      return `<button data-l="${l}" ${locked ? 'disabled aria-label="Màn ' + l + ' chưa mở"' : `aria-label="Màn ${l}${st ? ', ' + st + ' sao' : ''}"`}>${locked ? '🔒' : l}${stars}</button>`;
     }).join('');
   };
 
@@ -233,7 +235,7 @@ export function setupUI(actions) {
   let lastScore = 0;
   const shareUrl = location.origin + location.pathname.replace(/index\.html$/, '');
   $('vShare').addEventListener('click', async () => {
-    const text = `🐶✨ Mình vừa hạ Vua Mực với ${lastScore} điểm trong Doodle Dog! Bạn vượt qua được không? Chơi ngay:`;
+    const text = `🐶✨ Mình vừa hạ Vua Mực với ${lastScore} điểm ${'⭐'.repeat(Number($('vStars').dataset.n) || 0)} trong Doodle Dog! Bạn vượt qua được không? Chơi ngay:`;
     const msg = $('vShareMsg');
     try {
       const file = await scoreImage(lastScore);
@@ -283,8 +285,11 @@ export function setupUI(actions) {
     /** Đoạn kết: ẩn nút tạm dừng/bỏ qua để màn hình sạch. */
     outro() { hud.hidden = true; },
     /** Hiện bảng chiến thắng (đè lên khung hình đóng băng, làm mờ). @param {number} score */
-    victory(score) {
+    victory(score, stars = 0, res = null) {
       $('vScore').textContent = String(score);
+      $('vStars').innerHTML = '★'.repeat(stars) + `<s>${'★'.repeat(3 - stars)}</s>`;
+      $('vStars').dataset.n = String(stars);
+      $('vRes').textContent = res ? `Chuỗi dài nhất ${res.maxChain} · Mất ${res.hpLost} máu` : '';
       let best = 0;
       try { best = Number(localStorage.getItem('dd-best')) || 0; } catch { /* bỏ qua */ }
       const isNew = score > best;

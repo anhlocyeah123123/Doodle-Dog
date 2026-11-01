@@ -55,6 +55,21 @@ export const BAL = {
   frogReach: 9999,
   batEvery: 15,       // Dơi Bin: hét sóng âm đẩy lùi mọi ma thường + phá đồ rơi
   palStart: 2,        // đầu màn: chờ ... giây mới gọi được lần đầu
+  // Chuỗi: vẽ trúng liên tục không trượt / không bị cắn -> hệ số điểm tăng
+  chainStep: 5,       // mỗi ... lần trúng liên tiếp tăng hệ số thêm chainAdd
+  chainAdd: 0.5,
+  chainMax: 3,
+  // Sao cuối màn: ★ qua màn · ★ mất ≤ starHp máu · ★ chuỗi dài nhất ≥ starChain
+  starHp: 1,
+  starChain: 12,
+  // Cơ chế riêng của từng boss
+  bookFlip: 4.5,      // Ma Sách: ký hiệu hiện tại của boss tự đổi sau ... giây (phải vẽ nhanh)
+  gloomEvery: 8,      // Ma Đèn Chùm: thổi tắt nến mỗi ... giây
+  gloomSec: 5,        //   ký hiệu ma thường bị che trong ... giây; bùa SÉT thắp sáng lại ngay
+  headsEvery: 6,      // Ma Bí Ngô: thả 2 bí ngô con mang CÙNG ký hiệu hiện tại của boss
+  headsSpeed: 55,
+  brewEvery: 6.5,     // Phù Thủy Vạc: ném thuốc làm 1 con ma thường mọc thêm 1 ký hiệu
+  brewMax: 4,         //   tối đa ... ký hiệu mỗi con
   batPush: 120,
 };
 
@@ -89,7 +104,7 @@ export const DEFAULT_CAST_ANIM = 'cast_h';
  * @typedef {{n:number, m:number, v:number, s:number, t:number, boss:boolean, kind:Kind}} Wave
  *   n: số ma xuất hiện cùng lúc · m: số bùa mỗi ma · v: hệ số tốc độ · s: hệ số cỡ
  *   t: giây xuất hiện tính từ đầu màn · boss: là boss?
- * @typedef {{key:string, name:string, fly:string, hit:string, attack:string|null, drops:string[], king?:boolean}} Boss
+ * @typedef {{key:string, name:string, fly:string, hit:string, attack:string|null, drops:string[], king?:boolean, hint:string}} Boss
  *   fly/hit/attack: tên sprite · drops: sprite đồ ném xuống ('flame' = lửa xanh vẽ bằng code)
  * @typedef {{name:string, bg:string, heal:number, waves:Wave[], boss:Boss|null, page:string}} Level
  *   bg: khóa ảnh nền (web/assets/img/<bg>.webp) · heal: giây giữa 2 lần ma tim xuất hiện (khi thiếu máu)
@@ -97,11 +112,11 @@ export const DEFAULT_CAST_ANIM = 'cast_h';
  */
 /** @type {Record<string, Boss>} */
 export const BOSSES = {
-  book: { key: 'book', name: 'Ma Sách', fly: 'book_fly', hit: 'book_hit', attack: null, drops: ['drop_spider', 'drop_skull'] },
-  chand: { key: 'chand', name: 'Ma Đèn Chùm', fly: 'chand_fly', hit: 'chand_hit', attack: 'chand_attack', drops: ['flame'] },
-  pumpkin: { key: 'pumpkin', name: 'Ma Bí Ngô', fly: 'pumpkin_fly', hit: 'pumpkin_fly', attack: null, drops: ['drop_pumpkin'] },
-  cauldron: { key: 'cauldron', name: 'Phù Thủy Vạc', fly: 'cauldron_fly', hit: 'cauldron_hit', attack: 'cauldron_attack', drops: ['drop_potion'] },
-  king: { key: 'king', name: 'Vua Mực', fly: 'king_fly', hit: 'king_hit', attack: 'king_laugh', drops: ['drop_skull', 'drop_spider', 'drop_pumpkin', 'drop_potion'], king: true },
+  book: { key: 'book', name: 'Ma Sách', fly: 'book_fly', hit: 'book_hit', attack: null, drops: ['drop_spider', 'drop_skull'], hint: 'Ma Sách lật trang: ký hiệu boss tự đổi — vẽ thật nhanh!' },
+  chand: { key: 'chand', name: 'Ma Đèn Chùm', fly: 'chand_fly', hit: 'chand_hit', attack: 'chand_attack', drops: ['flame'], hint: 'Ma Đèn Chùm thổi tắt nến: dùng SÉT để thắp sáng!' },
+  pumpkin: { key: 'pumpkin', name: 'Ma Bí Ngô', fly: 'pumpkin_fly', hit: 'pumpkin_fly', attack: null, drops: ['drop_pumpkin'], hint: 'Bí ngô con mang CÙNG ký hiệu với boss — 1 nét trúng cả!' },
+  cauldron: { key: 'cauldron', name: 'Phù Thủy Vạc', fly: 'cauldron_fly', hit: 'cauldron_hit', attack: 'cauldron_attack', drops: ['drop_potion'], hint: 'Thuốc của Phù Thủy làm ma mọc thêm ký hiệu — dọn nhanh!' },
+  king: { key: 'king', name: 'Vua Mực', fly: 'king_fly', hit: 'king_hit', attack: 'king_laugh', drops: ['drop_skull', 'drop_spider', 'drop_pumpkin', 'drop_potion'], king: true, hint: 'Pha 2: Vua Mực ĐẢO ký hiệu — thấy ∧ thì vẽ ∨, thấy ─ thì vẽ │!' },
 };
 /** @returns {Level} */
 const level = (name, bg, heal, boss, page, waves) => ({
@@ -122,3 +137,9 @@ export const LEVELS = {
 export const LAST = Math.max(...Object.keys(LEVELS).map(Number));
 /** Màn tập (level 0): không có đợt ma, ma do game/tutorial.js đặt từng con; không cắn, không tự qua màn. */
 export const TUTORIAL = level('Màn tập', 'bg1', 1e9, '', '', []);
+
+/** Vua Mực pha 2 hiển thị ký hiệu ĐẢO: người chơi phải vẽ ký hiệu ngược lại (ký hiệu thật = MIRROR[ký hiệu hiện]). */
+export const MIRROR = { HAT_UP: 'HAT_DOWN', HAT_DOWN: 'HAT_UP', HORIZONTAL: 'VERTICAL', VERTICAL: 'HORIZONTAL' };
+
+/** Số sao cuối màn. @param {{hpLost:number, maxChain:number}} r */
+export const starsOf = (r) => 1 + (r.hpLost <= BAL.starHp ? 1 : 0) + (r.maxChain >= BAL.starChain ? 1 : 0);

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { recognize, strokeGeometry } from '../web/src/core/recognizer.js';
 import { Sim } from '../web/src/core/sim.js';
-import { BAL, LAST, LEVELS, CX, CY } from '../web/src/core/config.js';
+import { BAL, LAST, LEVELS, CX, CY, starsOf, MIRROR } from '../web/src/core/config.js';
 
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log('  ✓', name); };
@@ -262,6 +262,54 @@ test('bạn đồng hành không tự ra tay', () => {
   const s = new Sim(3, 4); s.waves = []; s.ghosts = [ghost(1, CX - 300, CY - 150, ['VERTICAL'])];
   for (let i = 0; i < 60 * 20; i++) s.tick(1 / 60);
   assert.ok(!s.ev.some((e) => e.k === 'pal'));
+});
+
+console.log('Chuỗi, sao, cơ chế boss');
+const bossOn = (lv, seq) => { const s = new Sim(4, lv); s.waves = []; s.pals = []; const b = { ...ghost(1, 700, 180, seq), boss: true, kind: LEVELS[lv].boss.key, sz: 1 }; s.ghosts = [b]; return [s, b]; };
+test('chuỗi: trúng liên tục tăng hệ số, trượt thì mất chuỗi', () => {
+  const s = new Sim(1, 1); s.waves = [];
+  for (let i = 0; i < BAL.chainStep; i++) { s.ghosts = [ghost(i, 300, 200, 'HORIZONTAL')]; s.cast('HORIZONTAL'); }
+  assert.equal(s.mult, 1 + BAL.chainAdd); assert.ok(s.ev.some((e) => e.k === 'chain'));
+  s.ghosts = [ghost(99, 300, 200, 'HORIZONTAL')]; const sc = s.score; s.cast('HORIZONTAL');
+  assert.equal(s.score - sc, Math.round(10 * (1 + BAL.chainAdd)), 'điểm nhân hệ số');
+  s.cast('VERTICAL'); assert.equal(s.chain, 0); assert.equal(s.maxChain, BAL.chainStep + 1);
+});
+test('sao: 1 qua màn + 1 mất ≤1 máu + 1 chuỗi ≥ starChain', () => {
+  assert.equal(starsOf({ hpLost: 3, maxChain: 2 }), 1);
+  assert.equal(starsOf({ hpLost: 1, maxChain: 2 }), 2);
+  assert.equal(starsOf({ hpLost: 0, maxChain: BAL.starChain }), 3);
+  const s = new Sim(1, 1); s.damage(2); assert.equal(s.result.hpLost, 2);
+});
+test('Ma Sách: vẽ chậm thì ký hiệu boss tự đổi; trúng thì đếm lại', () => {
+  const [s, b] = bossOn(1, ['HORIZONTAL', 'VERTICAL']);
+  run(s, BAL.bookFlip + 0.1); assert.notEqual(b.seq[0], 'HORIZONTAL'); assert.ok(s.ev.some((e) => e.k === 'flip'));
+});
+test('Ma Đèn Chùm: nến tắt định kỳ, sét thắp sáng lại', () => {
+  const [s] = bossOn(2, ['HORIZONTAL', 'VERTICAL', 'DIAGONAL']); s.ghosts[0].sp = 0;
+  run(s, BAL.gloomEvery + 0.1); assert.ok(s.gloom > 0);
+  s.ghosts.push(ghost(5, 200, 200, 'VERTICAL')); s.cast('LIGHTNING'); assert.equal(s.gloom, 0);
+});
+test('Ma Bí Ngô: thả bí con mang CÙNG ký hiệu boss -> 1 nét trúng cả', () => {
+  const [s, b] = bossOn(3, ['DIAGONAL', 'VERTICAL', 'HAT_UP']); b.sp = 0;
+  run(s, BAL.headsEvery + 0.1);
+  const heads = s.ghosts.filter((g) => g.kind === 'head'); assert.equal(heads.length, 2);
+  assert.ok(heads.every((h) => h.seq[0] === b.seq[b.i]));
+  s.cast(b.seq[b.i]); assert.equal(s.ghosts.filter((g) => g.kind === 'head').length, 0); assert.equal(b.i, 1);
+});
+test('Phù Thủy Vạc: thuốc làm ma thường mọc thêm ký hiệu (tối đa brewMax)', () => {
+  const [s, b] = bossOn(4, ['DIAGONAL', 'VERTICAL']); b.sp = 0;
+  const g = ghost(7, 200, 150, 'HORIZONTAL'); s.ghosts.push(g);
+  run(s, BAL.brewEvery + 0.1); assert.equal(g.seq.length, 2);
+  for (let i = 0; i < 6; i++) run(s, BAL.brewEvery); assert.ok(g.seq.length - g.i <= BAL.brewMax);
+});
+test('Vua Mực pha 2: ký hiệu ĐẢO — hiện ∧ thì phải vẽ ∨', () => {
+  const s = new Sim(4, LAST); s.waves = []; s.pals = [];
+  const b = { ...ghost(1, 700, 180, ['HORIZONTAL']), boss: true, kind: 'king', sz: 1 }; s.ghosts = [b];
+  s.cast('HORIZONTAL'); assert.equal(b.ph, 2); assert.ok(b.inv);
+  assert.ok(b.seq.every((q) => q in MIRROR), 'pha 2 không có ký hiệu chéo');
+  const shown = MIRROR[b.seq[0]];
+  assert.equal(s.cast(shown === b.seq[0] ? 'DIAGONAL' : shown), false, 'vẽ đúng ký hiệu HIỆN thì trượt');
+  assert.ok(s.cast(b.seq[0]), 'vẽ ký hiệu ngược thì trúng');
 });
 
 console.log('Màn tập');

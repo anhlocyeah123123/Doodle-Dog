@@ -8,7 +8,7 @@
 //   3 Nét bay    – chính nét người chơi vừa vẽ thu nhỏ bay lên đầu rồi nổ sao
 //   4 Truyện tranh – khung nổ răng cưa kiểu "POW", vạch tốc độ
 import { SIGIL_STYLE, SPELL_COLOR } from '../core/config.js';
-import { edges } from './view.js';
+import { edges, VIEW } from './view.js';
 import { INK, ink, inkText } from './ink.js';
 
 const TAU = Math.PI * 2;
@@ -278,4 +278,46 @@ export function areaFx(s, g, col, id) {
     return { t: 'beam', ax: mx - (dx / L) * 1200, ay: my - (dy / L) * 1200, bx: mx + (dx / L) * 1200, by: my + (dy / L) * 1200, col, id };
   }
   return { t: 'area', x: g.cx, y: g.cy, r: Math.max(g.maxX - g.minX, g.maxY - g.minY) / 2 + 45, col, id };
+}
+
+/**
+ * Vệt chém phủ CẢ màn hình theo đúng hình bùa vừa vẽ (ngang / dọc / chéo / V / ∧), đi qua chỗ người chơi vẽ.
+ * Lướt nhanh ~0.1s rồi mờ dần (~0.35s) -> thấy rõ "nét chém" mà không rối mắt.
+ * f: {pts:[[x,y]...], col, id, a}
+ */
+export function drawSweep(c, f) {
+  const k = f.a, al = 1 - easeOut(clamp01((k - 0.25) / 0.75)), p = easeOut(clamp01(k / 0.28));
+  const P = f.pts, seg = [];
+  let total = 0;
+  for (let i = 1; i < P.length; i++) { const L = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); seg.push(L); total += L; }
+  let left = total * p;
+  const path = [P[0]];
+  for (let i = 1; i < P.length && left > 0; i++) {
+    const q = Math.min(1, left / (seg[i - 1] || 1));
+    path.push([P[i - 1][0] + (P[i][0] - P[i - 1][0]) * q, P[i - 1][1] + (P[i][1] - P[i - 1][1]) * q]);
+    left -= seg[i - 1];
+  }
+  if (path.length < 2) return;
+  c.save();
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath(); path.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y)));
+  const w = Math.max(1, 0.6 / VIEW.s);   // điện thoại: thế giới bị thu nhỏ -> nét chém dày hơn để vẫn rõ
+  c.globalAlpha = al * 0.25; c.strokeStyle = f.col; c.lineWidth = 54 * w; c.stroke();
+  c.globalAlpha = al * 0.9; c.strokeStyle = '#fff'; c.lineWidth = 11 * w; c.stroke();
+  c.globalAlpha = al; c.strokeStyle = f.col; c.lineWidth = 4.5 * w; c.stroke();
+  c.restore();
+}
+
+/** Đường chém phủ cả màn hình cho bùa NGANG / DỌC / CHÉO, đi qua chỗ vừa vẽ. null = bùa không có vệt chém (V, ∧, tim, sét...). */
+export function slashFx(s, g, id) {
+  const e = edges(), col = SPELL_COLOR[s] || INK, pad = 30;
+  const L = e.l - pad, R = e.r + pad, T = e.t - pad, B = e.b + pad;
+  if (s === 'HORIZONTAL') { const r = g.x1 >= g.x0; return { t: 'sweep', pts: r ? [[L, g.cy], [R, g.cy]] : [[R, g.cy], [L, g.cy]], col, id, rate: 2.8 }; }
+  if (s === 'VERTICAL') { const d = g.y1 >= g.y0; return { t: 'sweep', pts: d ? [[g.cx, T], [g.cx, B]] : [[g.cx, B], [g.cx, T]], col, id, rate: 2.8 }; }
+  if (s === 'DIAGONAL') {
+    const dx = g.x1 - g.x0, dy = g.y1 - g.y0, n = Math.hypot(dx, dy) || 1, mx = (g.x0 + g.x1) / 2, my = (g.y0 + g.y1) / 2, far = 1600;
+    return { t: 'sweep', pts: [[mx - (dx / n) * far, my - (dy / n) * far], [mx + (dx / n) * far, my + (dy / n) * far]], col, id, rate: 2.8 };
+  }
+  // V / ∧: không vệt chém — ma trúng tự nổ tung tại chỗ như cũ
+  return null;
 }

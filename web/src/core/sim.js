@@ -21,8 +21,11 @@
 //   locked {s}                vẽ bùa chưa mở khóa (chưa lấy lại trang sách)
 //   slow                      bật đồng hồ cát · armor {x, y} ma khiên vỡ khiên
 //   throw {ch}                boss ném đồ · dark  Vua Mực tắt đèn
+//   chain {n, mult}           hệ số chuỗi tăng · chainbreak {n} mất chuỗi
+//   flip {x, y}               Ma Sách đổi ký hiệu · gloom / light  nến tắt / thắp lại (Đèn Chùm)
+//   heads {x, y}              Bí Ngô thả bí con · brew {x, y}  Phù Thủy Vạc cho ma mọc thêm ký hiệu
 //   pal {who, x, y}           bạn đồng hành ra tay (mun | frog | bat), x,y = con ma bị nhắm · palwait {who, cd, none} chưa gọi được
-import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL, hasSpell, palsAt } from './config.js';
+import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL, hasSpell, palsAt, MIRROR } from './config.js';
 
 /** @typedef {import('./config.js').Spell} Spell */
 /**
@@ -44,6 +47,9 @@ import { CX, CY, BAL, POOL, LEVELS, LAST, W, TUTORIAL, hasSpell, palsAt } from '
  * @property {number} [brk]  thời điểm (sim.t) ma khiên vỡ khiên
  * @property {number} [hitT] thời điểm boss trúng bùa gần nhất (để vẽ động tác bị trúng)
  * @property {number} [atk]  thời điểm boss ném đồ gần nhất
+ * @property {number} [flipAt] Ma Sách: thời điểm (sim.t) ký hiệu hiện tại sẽ tự đổi
+ * @property {boolean} [inv]  Vua Mực pha 2: hiển thị ký hiệu ĐẢO
+ * @property {number} [brewT] thời điểm vừa bị Phù Thủy cho uống thuốc
  */
 /** @typedef {{x:number, y:number, vy:number, ch:string, w:number}} FallingSymbol  w: giây báo trước còn lại (> 0: chưa rơi) */
 
@@ -95,6 +101,26 @@ export class Sim {
     this.pals = this.tut ? [] : palsAt(l).map((who) => ({ who, cd: BAL.palStart, max: { mun: BAL.munEvery, frog: BAL.frogEvery, bat: BAL.batEvery }[who] }));
     this.cleared = false;
     this.won = false;
+    // chuỗi + kết quả màn
+    this.chain = 0; this.maxChain = 0; this.hp0 = this.hp; this.hpLost = 0;
+    // cơ chế boss
+    this.gloom = 0; this.mechT = 0;
+  }
+
+  /** Hệ số điểm theo chuỗi hiện tại (x1, x1.5, x2 ... tối đa BAL.chainMax). */
+  get mult() { return Math.min(BAL.chainMax, 1 + Math.floor(this.chain / BAL.chainStep) * BAL.chainAdd); }
+
+  /** Vẽ trúng: tăng chuỗi. */
+  chainUp() {
+    const m0 = this.mult;
+    this.chain++; this.maxChain = Math.max(this.maxChain, this.chain);
+    if (this.mult > m0) this.ev.push({ k: 'chain', n: this.chain, mult: this.mult });
+  }
+
+  /** Trượt / bị cắn: mất chuỗi. */
+  chainBreak() {
+    if (this.chain >= BAL.chainStep) this.ev.push({ k: 'chainbreak', n: this.chain });
+    this.chain = 0;
   }
 
   get wave() { return this.nWaves - this.waves.length; }
@@ -136,7 +162,7 @@ export class Sim {
 
   /** Boss lướt vào từ ngoài mép phải màn hình (lúc xuất hiện, sang pha 2, sau khi cắn). Giữ nguyên g.sp. */
   bossEnter(g) {
-    g.x = W + 220; g.y = 175;
+    g.x = W + 220; g.y = 175; g.flipAt = undefined;
     g.vx = -BAL.bossEnter; g.vy = 0;
     g.ent = 1;
   }
@@ -212,6 +238,8 @@ export class Sim {
       this.ev.push({ k: 'dark' });
     }
     for (const p of this.pals) p.cd = Math.max(0, p.cd - dt);
+    this.gloom = Math.max(0, this.gloom - dt);
+    if (boss && !boss.ent) this.bossMech(boss, dt);
     for (let i = this.syms.length - 1; i >= 0; i--) {
       const s = this.syms[i];
       if (s.w > 0) { s.w -= dt; continue; }   // đang báo trước: vòng trên mặt đất nhấp nháy, chưa rơi
@@ -239,7 +267,9 @@ export class Sim {
   }
 
   damage(n) {
+    this.hpLost += Math.min(n, this.hp);
     this.hp = Math.max(0, this.hp - n);
+    this.chainBreak();
     this.ev.push({ k: 'hit' });
   }
 
@@ -282,6 +312,8 @@ export class Sim {
       }
       this.boltCd = BAL.boltCd;
       this.ev.push({ k: 'bolt' });
+      this.chainUp();
+      if (this.gloom > 0) { this.gloom = 0; this.ev.push({ k: 'light' }); }
       for (const sy of this.syms) this.ev.push({ k: 'pop', x: sy.x, y: sy.y });
       this.syms = [];
       for (const g of targets) this.advance(g, s);
@@ -290,10 +322,11 @@ export class Sim {
     // Vẽ ký hiệu nào: MỌI con ma đang chờ đúng ký hiệu đó đều mất nó cùng lúc, ở đâu trên màn hình cũng vậy
     // (giống Google Doodle 2016). Ma chỉ còn 1 ký hiệu thì bị diệt, ma nhiều ký hiệu thì gạch ký hiệu đầu.
     const hits = this.ghosts.filter((g) => g.seq[g.i] === s);
-    if (!hits.length) { this.ev.push({ k: 'miss' }); return false; }
+    if (!hits.length) { this.ev.push({ k: 'miss' }); this.chainBreak(); return false; }
+    this.chainUp();
     this.ev.push({ k: 'cast', s, targets: hits.map((g) => ({ x: g.x, y: g.y })) });
     if (hits.length > 1) {
-      this.score += BAL.comboBonus * (hits.length - 1);
+      this.score += Math.round(BAL.comboBonus * (hits.length - 1) * this.mult);
       this.ev.push({ k: 'combo', n: hits.length, x: CX, y: CY });
     }
     for (const g of hits) this.advance(g, s);
@@ -302,7 +335,7 @@ export class Sim {
 
   /** @param {Ghost} g @param {Spell} s */
   advance(g, s) {
-    if (g.boss) g.hitT = this.t;
+    if (g.boss) { g.hitT = this.t; g.flipAt = this.t + BAL.bookFlip; }
     if (g.kind === 'knight' && g.i === 0 && !g.brk) { g.brk = this.t; this.ev.push({ k: 'armor', x: g.x, y: g.y }); }
     if (++g.i < g.seq.length) { this.ev.push({ k: 'step', x: g.x, y: g.y, s }); return; }
     const { x, y } = g;
@@ -314,6 +347,11 @@ export class Sim {
     }
     if (g.boss && g.ph === 1) {   // pha 2: chuỗi bùa mới, lướt vào lại từ mép phải, nhanh hơn
       g.ph = 2; g.i = 0; g.seq = this.seq(g.seq.length);
+      if (this.cfg.boss?.king) {   // Vua Mực pha 2: hiển thị ĐẢO -> chỉ dùng ký hiệu có cặp đảo (bỏ chéo)
+        const pairs = /** @type {Spell[]} */ (Object.keys(MIRROR));
+        g.seq = g.seq.map(() => pairs[(this.r() * pairs.length) | 0]);
+        g.inv = true;
+      }
       g.sp *= BAL.bossPhase2;
       this.bossEnter(g);
       this.ev.push({ k: 'phase' });
@@ -328,13 +366,52 @@ export class Sim {
       this.ev.push({ k: 'finale', x, y });
       return;
     }
-    const pts = 10 * g.seq.length * (g.boss ? 10 : 1);
-    if (g.boss) { this.syms = []; this.dark = 0; }   // boss trang sách gục: đồ đang rơi tan luôn
+    const pts = Math.round(10 * g.seq.length * (g.boss ? 10 : 1) * this.mult);
+    if (g.boss) { this.syms = []; this.dark = 0; this.gloom = 0; this.ghosts = this.ghosts.filter((q) => q.kind !== 'head'); }   // boss trang sách gục: đồ đang rơi tan luôn
     this.remove(g);
     this.kills++;
     this.score += pts;
     this.ev.push({ k: 'kill', x, y, s, boss: g.boss, pts });
   }
+
+  /** Cơ chế riêng của từng boss (chỉ chạy khi boss đã vào sân). @param {Ghost} b @param {number} dt */
+  bossMech(b, dt) {
+    const key = this.cfg.boss?.key;
+    if (key === 'book') {   // lật trang: ký hiệu hiện tại tự đổi nếu vẽ chậm
+      if (b.flipAt == null) b.flipAt = this.t + BAL.bookFlip;
+      if (this.t >= b.flipAt) {
+        const cur = b.seq[b.i], opts = POOL.filter((q) => q !== cur);
+        b.seq[b.i] = opts[(this.r() * opts.length) | 0];
+        b.flipAt = this.t + BAL.bookFlip;
+        this.ev.push({ k: 'flip', x: b.x, y: b.y });
+      }
+      return;
+    }
+    if ((this.mechT += dt) < ({ chand: BAL.gloomEvery, pumpkin: BAL.headsEvery, cauldron: BAL.brewEvery }[key] ?? 1e9)) return;
+    this.mechT = 0;
+    if (key === 'chand') {   // thổi tắt nến: ký hiệu ma thường bị che
+      this.gloom = BAL.gloomSec;
+      this.ev.push({ k: 'gloom' });
+    } else if (key === 'pumpkin') {   // 2 bí ngô con mang CÙNG ký hiệu hiện tại của boss
+      for (const dx of [-90, 90]) {
+        /** @type {Ghost} */
+        const h = { id: this.id++, x: b.x + dx, y: b.y + 40, vx: 0, vy: 0, sp: 0, seq: [b.seq[b.i]], i: 0, sz: 0.8, boss: false, heal: false, ph: 1, kind: 'head' };
+        this.aim(h, BAL.headsSpeed);
+        this.ghosts.push(h);
+      }
+      this.ev.push({ k: 'heads', x: b.x, y: b.y });
+    } else if (key === 'cauldron') {   // thuốc: 1 con ma thường mọc thêm 1 ký hiệu
+      const list = this.ghosts.filter((g) => !g.boss && !g.heal && g.seq.length - g.i < BAL.brewMax && g.seq[g.i] !== 'LIGHTNING');
+      if (!list.length) return;
+      const g = list[(this.r() * list.length) | 0];
+      g.seq.push(POOL[(this.r() * POOL.length) | 0]);
+      g.brewT = this.t;
+      this.ev.push({ k: 'brew', x: g.x, y: g.y, bx: b.x, by: b.y });
+    }
+  }
+
+  /** Kết quả màn: máu mất, chuỗi dài nhất. */
+  get result() { return { hpLost: this.hpLost, maxChain: this.maxChain, score: this.score }; }
 
   /**
    * Người chơi chạm biểu tượng bạn đồng hành để gọi kỹ năng.

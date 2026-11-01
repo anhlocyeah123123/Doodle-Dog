@@ -328,3 +328,10 @@ html:not(.ios):not(.fs-ok) #rotate .best { display: none; }   /* không có mẹ
   background: rgba(7, 10, 32, .7); border: 2px solid #7fb4ff; border-radius: 12px; padding: 4px 12px;
 }
 .tap2 b { color: #9fd0ff; }
+
+/* sao: nút chọn màn + bảng chiến thắng */
+#lv button { position: relative; }
+#lv .lst { position: absolute; left: 50%; bottom: -0.95em; translate: -50% 0; font-style: normal; font-size: max(10px, calc(var(--u) * 2.6)); color: #e0a400; letter-spacing: -1px; white-space: nowrap; text-shadow: 0 1px 0 #fff; }
+.lvrow { padding-bottom: max(8px, calc(var(--u) * 2)); }
+.vstars { color: #ffc400; font-size: max(28px, calc(var(--u) * 9)); letter-spacing: 4px; text-shadow: 0 2px 0 var(--ink); }
+#lv .lst s, .vstars s { text-decoration: none; color: rgba(27, 27, 184, .22); text-shadow: none; }

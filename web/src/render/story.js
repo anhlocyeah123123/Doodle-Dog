@@ -117,11 +117,32 @@ function palFly(c, A, who, all, t) {
   });
 }
 
+/** Băng kết quả màn ở mép trên: 3 ngôi sao bật lần lượt + chuỗi dài nhất, máu đã mất. */
+function starBanner(c, n, res, t, a) {
+  if (a <= 0) return;
+  const k = uiK(), cx = safeCx(), y = VIEW.sy + 40 * k;
+  c.save(); c.globalAlpha = a;
+  for (let i = 0; i < 3; i++) {
+    const on = i < n, at = 0.5 + i * 0.25, p = Math.min(1, Math.max(0, (t - at) / 0.2));
+    const sc = on ? 0.6 + 0.4 * p + (p < 1 ? 0.3 * Math.sin(p * Math.PI) : 0) : 1;
+    starShape(c, cx + (i - 1) * 54 * k, y + (i === 1 ? -8 : 0) * k, 22 * k * sc, on && p > 0 ? '#ffd23f' : 'rgba(255,255,255,.25)');
+  }
+  if (res) inkText(c, `Chuỗi dài nhất ${res.maxChain} · Mất ${res.hpLost} máu`, cx, y + 46 * k, 18 * k, 'center');
+  c.restore();
+}
+
+/** Ngôi sao 5 cánh viền mực. */
+function starShape(c, x, y, r, fill) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.45 : r, a = (i / 10) * TAU - Math.PI / 2; i ? c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  c.closePath(); c.fillStyle = fill; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke();
+}
+
 /**
  * Đoạn chuyển màn sau khi hạ boss màn ps.level.
  * @param {CanvasRenderingContext2D} c
  * @param {import('../engine/assets.js').Assets} A
- * @param {{t:number, level:number, bx:number, by:number, pals:string[]}} ps
+ * @param {{t:number, level:number, bx:number, by:number, pals:string[], stars?:number, res?:{hpLost:number, maxChain:number}}} ps
  */
 export function drawPage(c, A, ps) {
   const info = PAGE_INFO[ps.level], t = ps.t, E = edges();
@@ -178,6 +199,7 @@ export function drawPage(c, A, ps) {
   c.restore();
 
   // ---- lớp trên (tọa độ khung nhìn) ----
+  if (ps.stars) starBanner(c, ps.stars, ps.res, t, fadeIn(t, 0.3, P.card - 1.4));
   if (info.king) kingWindow(c, A, info.king, t, fadeIn(t, P.beat, P.card), info.kingSay);
   if (info.drawing) caption(c, 'Một bức vẽ vụng về rơi ra… của ai nhỉ?', fadeIn(t, P.beat + 0.6, P.card), 0);
   if (info.broom) {
