@@ -3,7 +3,7 @@
 import { INK, inkText } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
-import { VIEW, uiK } from './view.js';
+import { VIEW, uiK, safeCx } from './view.js';
 
 const CYCLE = 2.4;   // 1 vòng bàn tay: hiện 0.3s · vẽ 1.2s · giữ 0.5s · mờ 0.4s
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
@@ -101,10 +101,10 @@ export function drawBanner(c, say, sub, a) {
     inkText(g, say, w / 2 + 4, 42, s1, 'center');
     if (sub) inkText(g, sub, w / 2 + 4, 71, s2, 'center', '#3a3ad0');
   });
-  const k = uiK() * Math.min(1, (VIEW.w - 40) / (w * uiK()));   // không tràn mép màn hẹp
+  const k = uiK() * Math.min(1, (VIEW.sw - 40) / (w * uiK()));   // không tràn mép màn hẹp
   c.save();
   c.globalAlpha = a;
-  c.translate(VIEW.w / 2, 6 * uiK() + (1 - a) * -20); c.scale(k, k);
+  c.translate(VIEW.sx + VIEW.sw / 2, VIEW.sy + 6 * uiK() + (1 - a) * -20); c.scale(k, k);
   blit(c, e, 0, 0);
   c.restore();
 }

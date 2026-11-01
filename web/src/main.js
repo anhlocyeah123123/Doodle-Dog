@@ -7,7 +7,7 @@ import { audio } from './engine/audio.js';
 import { draw, drawOpts } from './render/draw.js';
 import { drawCutscene } from './render/cutscene.js';
 import { drawOutro } from './render/outro.js';
-import { drawPage, drawEnding, drawTbc } from './render/story.js';
+import { drawPage, drawTbc } from './render/story.js';
 import { ink } from './render/ink.js';
 import { setCacheScale } from './render/cache.js';
 import { VIEW, fitView } from './render/view.js';
@@ -43,8 +43,9 @@ function applyQuality() {
 function layout() {
   const r = safe.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
-  // Phim mở đầu / đoạn kết: canvas phủ CẢ màn hình (kể cả tai thỏ, thanh Home) để nền đen / trời sao kín mép.
-  const cinema = ['cutscene', 'outro', 'ending', 'tbc'].includes(session?.state || '');
+  // Canvas LUÔN phủ CẢ màn hình (kể cả tai thỏ, thanh Home): lớp tối, đèn sân khấu, chớp sáng... kín mép.
+  // Chữ, nút, HUD tự đặt trong vùng an toàn (VIEW.sx/sy/sw/sh).
+  const cinema = true;
   const st = stageEl.getBoundingClientRect();
   fitView(r.width, r.height, cinema ? { dx: st.left - r.left, dy: st.top - r.top, w: st.width, h: st.height } : null);
   const cw = VIEW.w * VIEW.s, ch = VIEW.h * VIEW.s;
@@ -82,7 +83,6 @@ const loop = startLoop(
     if (session.state === 'cutscene') drawCutscene(ctx, A, session.cutT, ink.low);
     else if (session.state === 'outro' && session.outro) drawOutro(ctx, A, session.outro, ink.low);
     else if (session.state === 'page' && session.page) drawPage(ctx, A, session.page);
-    else if (session.state === 'ending' && session.ending) drawEnding(ctx, A, session.ending);
     else if (session.state === 'tbc') drawTbc(ctx, A, session.tbcT);
     else if (session.sim) draw(ctx, A, session.view());
   },

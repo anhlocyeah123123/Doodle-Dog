@@ -8,6 +8,25 @@ import { progress, tutorialSeen } from '../game/session.js';
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const stage = $('stage');
 
+/** Ảnh khoe điểm 1200x630: ảnh xem trước của game + số điểm. @returns {Promise<File|null>} */
+async function scoreImage(score) {
+  const img = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = 'assets/img/og.jpg'; });
+  if (!img) return null;
+  const cv = document.createElement('canvas'); cv.width = 1200; cv.height = 630;
+  const g = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
+  g.drawImage(/** @type {HTMLImageElement} */ (img), 0, 0, 1200, 630);
+  g.save(); g.translate(905, 566); g.rotate(-0.04);
+  g.fillStyle = '#fbf7ec'; g.strokeStyle = '#1b1bb8'; g.lineWidth = 6;
+  g.beginPath(); g.roundRect?.(-215, -50, 430, 100, 16); g.fill(); g.stroke();
+  g.fillStyle = '#d8430f'; g.textAlign = 'center'; g.font = 'bold 26px Hand, cursive';
+  g.fillText('Điểm của mình', 0, -14);
+  g.fillStyle = '#1b1bb8'; g.font = 'bold 50px Hand, cursive';
+  g.fillText(String(score), 0, 36);
+  g.restore();
+  const blob = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', 0.88));
+  return blob ? new File([/** @type {Blob} */ (blob)], 'doodle-dog-diem.jpg', { type: 'image/jpeg' }) : null;
+}
+
 /** Đổi ảnh nền khung game (CSS, không vẽ lại trên canvas). */
 export function setBackground(key) {
   stage.style.backgroundImage = `url(assets/img/${key}.webp)`;
@@ -210,6 +229,24 @@ export function setupUI(actions) {
   // Chiến thắng: bảng điểm -> "Còn tiếp…" -> tự về menu sau vài giây (chạm để về ngay)
   let tbcTimer = 0;
   const vcard = /** @type {HTMLElement} */ (victory.querySelector('.vcard')), tbc = /** @type {HTMLElement} */ (victory.querySelector('.tbc'));
+  // Khoe điểm: chia sẻ ẢNH điểm (nếu máy hỗ trợ) + lời mời + link; không được thì chép chữ để dán vào Zalo.
+  let lastScore = 0;
+  const shareUrl = location.origin + location.pathname.replace(/index\.html$/, '');
+  $('vShare').addEventListener('click', async () => {
+    const text = `🐶✨ Mình vừa hạ Vua Mực với ${lastScore} điểm trong Doodle Dog! Bạn vượt qua được không? Chơi ngay:`;
+    const msg = $('vShareMsg');
+    try {
+      const file = await scoreImage(lastScore);
+      const nav = /** @type {any} */ (navigator);
+      if (file && nav.canShare?.({ files: [file] })) { await nav.share({ files: [file], text: `${text} ${shareUrl}` }); return; }
+      if (nav.share) { await nav.share({ title: 'Doodle Dog', text, url: shareUrl }); return; }
+    } catch (e) { if (/** @type {any} */ (e)?.name === 'AbortError') return; }
+    let ok = false;
+    try { await navigator.clipboard.writeText(`${text} ${shareUrl}`); ok = true; } catch { /* app chặn */ }
+    msg.textContent = ok ? '✓ Đã chép lời mời + link — dán vào Zalo / Messenger nhé!' : `Chép đoạn này gửi bạn bè: ${text} ${shareUrl}`;
+    msg.hidden = false;
+  });
+
   $('vNext').addEventListener('click', () => {   // -> "Còn tiếp…": trang thứ 6 bay về phía mặt trăng (vẽ trên canvas)
     victory.hidden = true;
     actions.tbc();
@@ -248,6 +285,14 @@ export function setupUI(actions) {
     /** Hiện bảng chiến thắng (đè lên khung hình đóng băng, làm mờ). @param {number} score */
     victory(score) {
       $('vScore').textContent = String(score);
+      let best = 0;
+      try { best = Number(localStorage.getItem('dd-best')) || 0; } catch { /* bỏ qua */ }
+      const isNew = score > best;
+      if (isNew) { best = score; try { localStorage.setItem('dd-best', String(score)); } catch { /* bỏ qua */ } }
+      $('vBest').textContent = String(best);
+      $('vNew').hidden = !isNew;
+      $('vShareMsg').hidden = true;
+      lastScore = score;
       vcard.hidden = false; tbc.hidden = true;
       victory.hidden = false;
     },

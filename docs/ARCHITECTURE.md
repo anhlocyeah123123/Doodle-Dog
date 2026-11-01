@@ -139,12 +139,24 @@ Nhạc nền tạm im trong đoạn kết (`audio.duck`).
   `PALS`: Mèo Mun (màn 2+, xóa 1 ký hiệu), Ếch Ộp (3+, nuốt 1 con ma), Dơi Bin (4+, đẩy lùi + phá đồ rơi). KHÔNG đứng quanh Cún: chỉ là biểu tượng góc dưới trái (`palIcon`), người chơi chạm để gọi (`Sim.usePal`, có hồi chiêu); lúc gọi nhân vật hiện ra chốc lát (fx 'cameo').
 - Đồng hồ cát: recognizer nhận nét TỰ CẮT CHÉO qua giữa (⧗ / số 8) -> `HOURGLASS`; ma + đồ rơi chậm `BAL.slowK` trong `BAL.slowSec`.
 - Vua Mực pha 2: tắt đèn (`sim.dark`) định kỳ. Chỉ boss màn cuối mới có đòn kết liễu (`finale`); boss màn 1–4 gục bình thường.
-- Sau boss màn 1–4: `render/story.js drawPage`: trang rơi -> Cún bắt -> Vua Mực ở cửa sổ (màn 3: bức vẽ của Mực Con) -> thẻ "Bạn học được bùa mới!" -> thẻ "Bạn đồng hành mới!" -> Cún chạy sang PHẢI, tối dần. Màn 4: cưỡi chổi bay lên phải. Sau đó Session: (bài học của Cô Cú, sáng dần -> học xong tối dần) -> màn mới sáng dần, Cún chạy từ TRÁI vào giữa (`session.fade`).
+- Sau boss màn 1–4: `render/story.js drawPage`: trang rơi -> Cún bắt -> Vua Mực ở cửa sổ (màn 3: bức vẽ của Mực Con) -> thẻ "Bạn học được bùa mới!" -> thẻ "Bạn đồng hành mới!" -> biểu tượng bạn mới THU VỀ góc dưới trái, ửng sáng (`palFly`) -> Cún chạy sang PHẢI, tối dần. Màn 4: cưỡi chổi bay lên phải. Sau đó Session: (bài học của Cô Cú, sáng dần -> học xong tối dần) -> màn mới sáng dần, Cún chạy từ TRÁI vào giữa (`session.fade`).
 - Bài học bùa mới của Cô Cú: `game/tutorial.js LESSONS[màn]`, chạy 1 lần (localStorage `dd-les<màn>`), bỏ qua được.
-- Hạ Vua Mực: outro (phép tối thượng) -> `drawEnding` (teo thành Mực Con, làm bạn, sách lành lại) -> bảng chiến thắng -> `drawTbc` (trang thứ 6 bay về mặt trăng, "Còn tiếp…") -> menu.
+- Màn 5: Cún cưỡi chổi bay tới từ trời, đáp xuống, chổi bay đi rồi mới vào trận (`Session.broomIntro`).
+- Hạ Vua Mực: outro (phép tối thượng) -> bảng chiến thắng -> `drawTbc` (một trang sách bay về mặt trăng, chữ "Còn tiếp…") -> menu.
 - Hiệu ứng học từ Doodle: đèn sân khấu lúc vào màn (`drawSpot`), khói "bùm" khi diệt ma (`fx_poof`), tắt đèn còn đôi mắt (`fx_eyes`), mũ rơi khi Mun xuất hiện (`fx_hat`).
 
 ## Asset cốt truyện
 - `tools/slice_sheets.py [tên tấm...]`: cắt tấm AI (raw/sheets2/*.png) -> raw/frames/<hoạt ảnh>/NN.png. Xử lý nền tối/nền giấy, nhãn chữ, đường kẻ, dấu ✦ Gemini.
 - `tools/build_story_assets.py [hoạt ảnh...]`: đóng dải webp (ảnh 1.5x, manifest `k` = 1/1.5) và GỘP vào manifest.json. Sprite có `lazy: 1` tải ngầm sau khi vào menu.
   Lưu ý: chạy lại `tools/build_assets.py` sẽ ghi đè manifest -> chạy `build_story_assets.py` ngay sau đó.
+
+## Âm thanh
+- Mọi tiếng hiệu ứng đi qua bộ nén chung (`audio.out`: DynamicsCompressor) -> nhiều tiếng cùng lúc không bị rè/chói.
+- Nhiều ma chết trong cùng 1 nét: chỉ phát 1 tiếng diệt + 1 nốt combo nhẹ (không cộng dồn).
+- Khiên ma khiên vỡ: `audio.crack()` tổng hợp bằng WebAudio (tiếng nứt + mảnh vỡ), không dùng tiếng ma ré.
+
+## Màn hình đầy đủ & chia sẻ
+- Canvas LUÔN phủ cả màn hình (kể cả tai thỏ/thanh Home) -> lớp tối, đèn sân khấu, tắt đèn kín mép. HUD, chữ, nút dùng vùng an toàn `VIEW.sx/sy/sw/sh` (`safeEdges()`, `safeCx()`).
+- Bài học bùa mới: thẻ "Cô Cú dạy bùa mới!" to giữa màn rồi thu lên thành băng lời dặn (`lessonIntro`, `drawLessonCard`).
+- Xem trước link (Zalo/Messenger/Facebook): thẻ `og:*` trong index.html, ảnh `assets/img/og.jpg` (1200x630, cảnh dồn phép kết liễu).
+- Bảng chiến thắng: điểm + kỷ lục (`dd-best`) + nút "Khoe điểm" (Web Share kèm ảnh điểm; không được thì chép lời mời + link).

@@ -6,7 +6,7 @@ import { INK, ink, inkStroke, inkText, inkHeart, bubble } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
 import { drawSigil, drawBeam, drawArea } from './sigil.js';
-import { VIEW, uiK } from './view.js';
+import { VIEW, uiK, safeCx } from './view.js';
 import { drawDemo, drawBanner } from './guide.js';
 
 const TAU = Math.PI * 2;
@@ -102,10 +102,10 @@ function drawGhost(c, A, g, t, st) {
   const top = y - box.h / 2 - 4;
   if (g.boss) {   // boss: cả chuỗi bùa, bùa hiện tại tô vàng to hơn
     // Boss to, xuất hiện cao trên mép màn -> kẹp dãy bùa xuống dưới dòng tiêu đề để luôn nhìn thấy ngay từ đầu.
-    const by = Math.max(top - 6, -VIEW.oy + 82 * uiK());
+    const by = Math.max(top - 6, VIEW.sy - VIEW.oy + 82 * uiK());
     // Boss lướt vào từ mép phải: dãy bùa cũng kẹp vào trong màn theo chiều ngang (chừa chỗ nút tạm dừng)
     const n = g.seq.length, gap = 40, half = ((n - 1) * gap) / 2;
-    const cxRow = Math.min(Math.max(g.x, -VIEW.ox + half + 30), W + VIEW.ox - half - 40);
+    const cxRow = Math.min(Math.max(g.x, VIEW.sx - VIEW.ox + half + 30), VIEW.sx + VIEW.sw - VIEW.ox - half - 40);
     const x0 = cxRow - half;
     for (let i = 0; i < n; i++) {
       const done = i < g.i, cur = i === g.i;
@@ -151,35 +151,61 @@ export const PAL_NAME = { mun: 'Mun', frog: 'Ộp', bat: 'Bin' };
 /** Vị trí biểu tượng bạn đồng hành thứ i (tọa độ khung nhìn, góc dưới trái) + bán kính. */
 export function palIcon(i) {
   const k = uiK(), r = 34 * k;   // ≥ ~48px chạm được trên điện thoại
-  return { x: 16 * k + r + i * (r * 2 + 14 * k), y: VIEW.h - 16 * k - r, r };
+  return { x: VIEW.sx + 16 * k + r + i * (r * 2 + 14 * k), y: VIEW.sy + VIEW.sh - 16 * k - r, r };
 }
 
 /** Biểu tượng bạn đồng hành (góc dưới trái): sẵn sàng thì viền vàng nhấp nháy, đang hồi thì xám + vòng đếm giờ. */
-function drawPalIcons(c, A, pals, t) {
+/**
+ * Vẽ 1 biểu tượng bạn đồng hành tại (x, y) bán kính r.
+ * cd: 0 = sẵn sàng, (0..1] = phần hồi chiêu còn lại · glow: 0..1 ửng sáng (vừa nhận được / bạn mới)
+ */
+export function palBadge(c, A, who, x, y, r, t, cd = 0, glow = 0) {
+  const ready = cd <= 0;
+  c.save();
+  if (glow > 0) {   // quầng sáng vàng tỏa ra + tia lấp lánh
+    const g = c.createRadialGradient(x, y, r * 0.6, x, y, r * 2.4);
+    g.addColorStop(0, `rgba(255,236,140,${0.75 * glow})`); g.addColorStop(1, 'rgba(255,236,140,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 2.4, 0, TAU); c.fill();
+    c.strokeStyle = `rgba(255,255,255,${0.9 * glow})`; c.lineWidth = 3; c.lineCap = 'round';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU + t * 1.2, r0 = r * 1.25, r1 = r * (1.6 + 0.25 * Math.sin(t * 8 + i));
+      c.beginPath(); c.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0); c.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1); c.stroke();
+    }
+  }
+  c.fillStyle = ready ? '#fffbe8' : '#d9d9e6'; c.strokeStyle = INK; c.lineWidth = 3;
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+  c.save(); c.clip();
+  const s = A.sprites[PAL_FACE[who]];
+  if (s?.img) {
+    const sc = (r * 2.1) / (s.h * (s.k || 1));
+    c.globalAlpha = ready ? 1 : 0.45;
+    blitSprite(c, A, PAL_FACE[who], 0, x, y + r * 1.05, sc, false, 'b');
+    c.globalAlpha = 1;
+  }
+  c.restore();
+  c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+  if (ready) {   // sẵn sàng: viền vàng phập phồng
+    c.strokeStyle = '#ffc400'; c.lineWidth = 4 + Math.sin(t * 6) * 1.5 + glow * 3;
+    c.beginPath(); c.arc(x, y, r + 5, 0, TAU); c.stroke();
+  } else {   // đang hồi: vòng đếm giờ
+    c.strokeStyle = '#1fa8e8'; c.lineWidth = 5;
+    c.beginPath(); c.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - cd)); c.stroke();
+  }
+  c.restore();
+  inkText(c, PAL_NAME[who], x, y + r + 2, 15 * uiK(), 'center');
+}
+
+/** Biểu tượng bạn đồng hành lúc chơi (góc dưới trái). newPal: bạn vừa nhận ở màn trước -> ửng sáng + chữ "Mới!" vài giây đầu màn. */
+function drawPalIcons(c, A, pals, t, newPal) {
   pals.forEach((p, i) => {
-    const { x, y, r } = palIcon(i), ready = p.cd <= 0;
-    c.save();
-    c.fillStyle = ready ? '#fffbe8' : '#d9d9e6'; c.strokeStyle = INK; c.lineWidth = 3;
-    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
-    c.save(); c.clip();
-    const s = A.sprites[PAL_FACE[p.who]];
-    if (s?.img) {
-      const sc = (r * 2.1) / (s.h * (s.k || 1));
-      c.globalAlpha = ready ? 1 : 0.45;
-      blitSprite(c, A, PAL_FACE[p.who], 0, x, y + r * 1.05, sc, false, 'b');
-      c.globalAlpha = 1;
+    const { x, y, r } = palIcon(i);
+    const glow = newPal && newPal.who === p.who ? newPal.a : 0;
+    palBadge(c, A, p.who, x, y, r, t, p.cd > 0 ? p.cd / p.max : 0, glow);
+    if (glow > 0.05) {
+      c.save(); c.globalAlpha = Math.min(1, glow * 2);
+      inkText(c, 'Mới! Chạm để gọi', x - r, y - r - 12 - Math.sin(t * 5) * 3, 17 * uiK(), 'left', '#d8430f');
+      c.restore();
     }
-    c.restore();
-    c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
-    if (ready) {   // sẵn sàng: viền vàng phập phồng
-      c.strokeStyle = '#ffc400'; c.lineWidth = 4 + Math.sin(t * 6) * 1.5;
-      c.beginPath(); c.arc(x, y, r + 5, 0, TAU); c.stroke();
-    } else {   // đang hồi: vòng đếm giờ
-      c.strokeStyle = '#1fa8e8'; c.lineWidth = 5;
-      c.beginPath(); c.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - p.cd / p.max)); c.stroke();
-    }
-    c.restore();
-    inkText(c, PAL_NAME[p.who], x, y + r + 2, 15 * uiK(), 'center');
   });
 }
 
@@ -277,7 +303,7 @@ function drawToast(c, o, i) {
   e.ox = e.w / 2; e.oy = e.h / 2;
   // Từ ĐÁY màn hình lên: ma bay tới từ phía trên nên đáy hầu như trống -> không che ký hiệu trên đầu ma.
   const k = uiK();
-  c.save(); c.translate(VIEW.w / 2, VIEW.h - 8 * k); c.scale(k, k);
+  c.save(); c.translate(safeCx(), VIEW.sy + VIEW.sh - 8 * k); c.scale(k, k);
   c.globalAlpha = a * 0.95;
   blit(c, e, 0, -e.h / 2 - i * 50 + (1 - a) * 16);
   c.restore();
@@ -285,10 +311,10 @@ function drawToast(c, o, i) {
 
 function drawHud(c, sim, title = true) {
   const k = uiK();
-  c.save(); c.scale(k, k);
+  c.save(); c.translate(VIEW.sx, VIEW.sy); c.scale(k, k);
   for (let i = 0; i < BAL.hp; i++) inkHeart(c, 36 + i * 40, 38, 16, i < sim.hp ? '#ff6b9a' : 'rgba(255,255,255,.3)');
   inkText(c, String(sim.score), 22, 92, 30);
-  if (title) inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, VIEW.w / 2 / k, 40, 24, 'center');
+  if (title) inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, VIEW.sw / 2 / k, 40, 24, 'center');
   if (hasSpell(sim.spellLv, 'LIGHTNING')) {
     const r = 1 - sim.boltCd / BAL.boltCd;   // thanh hồi chiêu sét
     c.fillStyle = '#fff'; c.fillRect(56, 108, 120, 14);
@@ -321,7 +347,7 @@ function drawPanel(c, msg) {
     inkText(g, msg.a, w / 2 + 4, 76, 48, 'center');
     inkText(g, msg.b, w / 2 + 4, 126, 24, 'center');
   });
-  c.save(); c.translate(0, VIEW.h / 2); c.scale(k, k);
+  c.save(); c.translate(0, VIEW.sy + VIEW.sh / 2); c.scale(k, k);
   blit(c, e, 0, -80);
   c.restore();
 }
@@ -330,7 +356,7 @@ function drawPanel(c, msg) {
 function drawSlow(c, left, t) {
   const a = Math.min(1, left * 2, (BAL.slowSec - left) * 4);
   c.fillStyle = `rgba(255,196,110,${0.13 * a})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
-  c.save(); c.globalAlpha = 0.22 * a; c.translate(VIEW.w / 2, VIEW.h * 0.42); c.rotate(Math.sin(t * 0.8) * 0.1);
+  c.save(); c.globalAlpha = 0.22 * a; c.translate(safeCx(), VIEW.sy + VIEW.sh * 0.42); c.rotate(Math.sin(t * 0.8) * 0.1);
   inkText(c, '⧗', 0, 40, 130, 'center', '#c97a12');
   c.restore();
 }
@@ -362,6 +388,33 @@ function drawSpot(c, dogX, a) {
   c.restore();
 }
 
+/**
+ * Thẻ giới thiệu bài học: "Cô Cú dạy bùa mới!" + lời dặn bước đầu, hiện to giữa màn hình (màn hình tối),
+ * rồi THU LÊN mép trên, đúng chỗ băng lời dặn sẽ hiện -> người chơi hiểu chuyện gì đang diễn ra.
+ * @param {{k:number, say:string, sub:string, level:number}} L  k: tiến độ 0..1
+ */
+function drawLessonCard(c, A, L, t) {
+  const k = L.k, ease = (q) => (q < 0.5 ? 2 * q * q : 1 - (-2 * q + 2) ** 2 / 2);
+  const inA = Math.min(1, k / 0.12), mv = ease(Math.max(0, (k - 0.72) / 0.28));
+  c.fillStyle = `rgba(4,6,22,${0.7 * inA * (1 - mv)})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
+  const u = uiK(), cx = safeCx();
+  const y0 = VIEW.sy + VIEW.sh * 0.5, y1 = VIEW.sy + 34 * u;
+  const y = y0 + (y1 - y0) * mv, sc = u * (1.25 - 0.25 * mv) * (0.9 + 0.1 * inA);
+  c.save();
+  c.globalAlpha = inA;
+  // cô Cú + dòng tiêu đề nhỏ (mờ dần khi thu lên)
+  c.save(); c.globalAlpha = inA * (1 - mv);
+  const owl = A.sprites.owl_talk;
+  if (owl?.img) blitSprite(c, A, 'owl_talk', ((t * owl.fps) | 0) % owl.n, cx, y - 66 * u, 1.05 * u, false, 'b');
+  inkText(c, `Trang ${L.level - 1} · Cô Cú dạy bùa mới!`, cx, y - 30 * u, 22 * u, 'center', '#d8430f');
+  c.restore();
+  c.translate(cx, y); c.scale(sc, sc);
+  inkText(c, L.say, 0, 12, 34, 'center');
+  c.globalAlpha = inA * (1 - mv);
+  if (L.sub) inkText(c, L.sub, 0, 46, 18, 'center');
+  c.restore();
+}
+
 /** Độ dày nét theo thiết bị: cảm ứng cần nét dày ≥ ~7px THẬT trên màn hình để thấy rõ dưới ngón tay. */
 const strokeK = (touch) => (touch ? Math.max(1, 0.7 / VIEW.s) : 1);
 
@@ -377,8 +430,9 @@ export function draw(c, A, v) {
   c.translate(VIEW.ox, VIEW.oy);   // thế giới 960x540 nằm giữa khung nhìn, bám đáy
   if (fx.shake > 0 && !ink.low) c.translate((Math.random() - 0.5) * fx.shake * 26, (Math.random() - 0.5) * fx.shake * 26);
 
-  c.fillStyle = 'rgba(0,0,0,.28)';   // bóng dưới chân
-  c.beginPath(); c.ellipse(dog.x, GY + 2, 55, 9, 0, 0, TAU); c.fill();
+  const lift = Math.min(1, -(dog.dy || 0) / 260);   // bay càng cao bóng càng nhỏ, mờ
+  c.fillStyle = `rgba(0,0,0,${0.28 * (1 - lift * 0.8)})`;   // bóng dưới chân
+  c.beginPath(); c.ellipse(dog.x, GY + 2, 55 * (1 - lift * 0.6), 9 * (1 - lift * 0.6), 0, 0, TAU); c.fill();
 
   for (const s of sim.syms) {   // ký tự boss thả: vòng đỏ = sẽ trúng nhân vật
     const danger = Math.abs(s.x - CX) < BAL.symHitR;
@@ -394,8 +448,10 @@ export function draw(c, A, v) {
     drawDrop(c, A, s, t);
   }
   for (const g of sim.ghosts) drawGhost(c, A, g, t, sim.t);
-  if (v.owl) drawSprite(c, A, v.owl.a, t - v.owl.t0, -VIEW.ox + 95, GY, false);   // Cô Cú dạy bùa (góc trái)
-  drawSprite(c, A, dog.state, t - dog.t0, dog.x, GY, dog.flip);
+  if (v.owl) drawSprite(c, A, v.owl.a, t - v.owl.t0, VIEW.sx - VIEW.ox + 95, GY, false);   // Cô Cú dạy bùa (góc trái)
+  if (v.broom && v.broom.x > dog.x + 40) drawCentered(c, A, 'broom_idle', t, v.broom.x - 6, v.broom.y + 4, 1.6, true);   // chổi đã rời Cún
+  drawSprite(c, A, dog.state, t - dog.t0, dog.x, GY + (dog.dy || 0), dog.flip);
+  if (v.broom && v.broom.x <= dog.x + 40) drawCentered(c, A, 'broom_idle', t, v.broom.x - 6, v.broom.y + 4, 1.6, true);   // Cún đang ngồi trên chổi
   if (sim.shield > 0) drawShield(c, sim.shield, t);
   for (const f of fx.list) drawFx(c, f);
   for (const p of fx.parts) {
@@ -414,10 +470,11 @@ export function draw(c, A, v) {
   if (sim.dark > 0) drawDark(c, A, sim.dark, dog.x);
   if (v.spot > 0) drawSpot(c, dog.x, v.spot);
   if (fx.flash > 0) { c.fillStyle = `rgba(255,255,230,${fx.flash * 2})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }
-  if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(0, 0, VIEW.w, VIEW.h); }
-  if (drawOpts.hud) drawHud(c, sim, !v.guide);
-  if (drawOpts.hud && v.pals && sim.pals.length) drawPalIcons(c, A, sim.pals, t);
+  if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(VIEW.sx, VIEW.sy, VIEW.sw, VIEW.sh); }
+  if (drawOpts.hud) drawHud(c, sim, !v.guide && !v.lessonCard && sim.level > 0);
+  if (drawOpts.hud && v.pals && sim.pals.length) drawPalIcons(c, A, sim.pals, t, v.newPal);
   if (v.guide) drawBanner(c, v.guide.say, v.guide.sub, v.guide.a);
+  if (v.lessonCard) drawLessonCard(c, A, v.lessonCard, t);
   fx.toasts.forEach((o, i, all) => drawToast(c, o, all.length - 1 - i));   // mới nhất nằm dưới cùng
   if (v.msg) drawPanel(c, v.msg);
   if (v.fade > 0) { c.fillStyle = `rgba(4,6,22,${Math.min(1, v.fade)})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }   // chuyển cảnh: tối dần / sáng dần

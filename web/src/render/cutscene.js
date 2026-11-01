@@ -14,7 +14,7 @@ import { INK, inkText } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
 import { drawSprite, drawCentered, blitSprite } from './draw.js';
-import { VIEW, uiK, edges } from './view.js';
+import { VIEW, uiK, edges, safeEdges, safeCx } from './view.js';
 
 export const DURATION = 14;
 const TAU = Math.PI * 2;
@@ -85,7 +85,7 @@ export function speech(c, txt, x, y, a, size = 26, tail = 0) {
     inkText(g, txt, w / 2, h / 2 + size * 0.38, size, 'center');
   });
   // kẹp vào trong khung nhìn để bóng thoại không bị cắt ở mép
-  const E = edges(), half = (w + 8) / 2;
+  const E = safeEdges(), half = (w + 8) / 2;
   x = Math.max(E.l + half + 6, Math.min(E.r - half - 6, x));
   y = Math.max(y, E.t + h + 30 + 48 * uiK());   // chừa chỗ nút Bỏ qua / tạm dừng ở mép trên
   c.save(); c.globalAlpha = a;
@@ -103,20 +103,20 @@ export function caption(c, txt, a, bar = 0) {
     g.beginPath(); g.moveTo(6, 6); g.lineTo(w, 3); g.lineTo(w + 3, h); g.lineTo(3, h + 3); g.closePath(); g.fill(); g.stroke();
     inkText(g, txt, w / 2 + 4, h / 2 + 12, size, 'center');
   });
-  const k = uiK() * Math.min(1, (VIEW.w - 30) / (w * uiK()));
+  const k = uiK() * Math.min(1, (VIEW.sw - 30) / (w * uiK()));
   c.save(); c.globalAlpha = a;
-  c.translate(VIEW.w / 2, VIEW.h - bar - 8 + (1 - a) * 12); c.scale(k, k);
+  c.translate(safeCx(), Math.min(VIEW.h - bar, VIEW.sy + VIEW.sh) - 8 + (1 - a) * 12); c.scale(k, k);
   blit(c, e, 0, 0);
   c.restore();
 }
 
 /** Chữ to giữa màn hình kèm nét cọ gạch chân (tọa độ khung nhìn). a: độ hiện, p: tiến độ nét cọ */
-export function bigTitle(c, txt, sub, a, p, y = VIEW.h / 2 - 20) {
+export function bigTitle(c, txt, sub, a, p, y = VIEW.sy + VIEW.sh / 2 - 20) {
   if (a <= 0) return;
   const k = uiK();
   c.save();
   c.globalAlpha = a;
-  c.translate(VIEW.w / 2, y); c.scale(k * (0.85 + 0.15 * ease(a)), k * (0.85 + 0.15 * ease(a))); c.rotate(-0.03);
+  c.translate(safeCx(), y); c.scale(k * (0.85 + 0.15 * ease(a)), k * (0.85 + 0.15 * ease(a))); c.rotate(-0.03);
   inkText(c, txt, 0, 0, 60, 'center');
   const L = measure(`bold 60px ${FONT}`, txt) / 2 + 10;
   c.strokeStyle = '#d8430f'; c.lineWidth = 9; c.lineCap = 'round';

@@ -7,7 +7,7 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0b1030">
-<meta name="description" content="Vẽ bùa bằng ngón tay, đuổi lũ ma khỏi thư viện Halloween.">
+<meta name="description" content="Vẽ bùa bằng ngón tay, cùng Cún lấy lại 5 trang sách phép và hạ Vua Mực! Chơi miễn phí trên điện thoại.">
 <!-- iPhone: thêm vào Màn hình chính -> mở toàn màn hình như ứng dụng -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -17,6 +17,24 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
 <link rel="manifest" href="manifest.json">
 <link rel="preload" href="assets/fonts/hand.woff2" as="font" type="font/woff2" crossorigin>
 <title>Doodle Dog – Vẽ bùa đuổi ma</title>
+<!-- xem trước khi gửi link qua Zalo / Messenger / Facebook -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Doodle Dog">
+<meta property="og:title" content="Doodle Dog – Vẽ bùa đuổi ma 🎃">
+<meta property="og:description" content="Vẽ bùa bằng ngón tay, cùng Cún lấy lại 5 trang sách phép và hạ Vua Mực! Chơi miễn phí ngay trên điện thoại, không cần cài.">
+<meta property="og:url" content="https://doodle-dog.anhlocyeah123123.workers.dev/">
+<meta property="og:image" content="https://doodle-dog.anhlocyeah123123.workers.dev/assets/img/og.jpg">
+<meta property="og:image:secure_url" content="https://doodle-dog.anhlocyeah123123.workers.dev/assets/img/og.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Cún dồn phép tối thượng hạ Vua Mực">
+<meta property="og:locale" content="vi_VN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Doodle Dog – Vẽ bùa đuổi ma 🎃">
+<meta name="twitter:description" content="Vẽ bùa bằng ngón tay, cùng Cún hạ Vua Mực! Chơi miễn phí trên điện thoại.">
+<meta name="twitter:image" content="https://doodle-dog.anhlocyeah123123.workers.dev/assets/img/og.jpg">
+<link rel="canonical" href="https://doodle-dog.anhlocyeah123123.workers.dev/">
 <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
@@ -93,9 +111,14 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
       <div class="card narrow vcard">
         <div class="stars" aria-hidden="true">✦ ✧ ✦</div>
         <h2>Bạn đã chiến thắng!</h2>
-        <p class="hint">Cún đã lấy lại đủ 5 trang và làm bạn với Mực Con.</p>
+        <p class="hint">Cún đã hạ Vua Mực và lấy lại đủ 5 trang sách phép.</p>
         <p class="vscore">Điểm: <b id="vScore">0</b></p>
-        <button id="vNext" class="big">Tiếp tục</button>
+        <p class="hint small vbest">Kỷ lục của bạn: <b id="vBest">0</b> <span id="vNew" hidden>· 🎉 Kỷ lục mới!</span></p>
+        <div class="row">
+          <button id="vShare">📤 Khoe điểm với bạn bè</button>
+          <button id="vNext" class="big">Tiếp tục</button>
+        </div>
+        <p class="hint small" id="vShareMsg" hidden></p>
       </div>
       <div class="tbc" hidden>Còn tiếp<span>.</span><span>.</span><span>.</span></div>
     </section>
