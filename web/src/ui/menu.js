@@ -62,12 +62,12 @@ async function enterFullscreen() {
 /**
  * @param {{
  *   start:(level:number)=>void, story:()=>void, skip:()=>void, quit:()=>void,
- *   setPaused:(p:boolean)=>void, isPlaying:()=>boolean
+ *   setPaused:(p:boolean)=>void, isPlaying:()=>boolean, tbc:()=>void
  * }} actions
  */
 export function setupUI(actions) {
   trackSize();
-  const menu = $('menu'), hud = $('hud'), help = $('help'), pause = $('pause'), victory = $('victory');
+  const splash = $('splash'), menu = $('menu'), hud = $('hud'), help = $('help'), pause = $('pause'), victory = $('victory');
 
   const refreshMute = () => {
     for (const b of document.querySelectorAll('.mute')) b.textContent = audio.muted ? '🔇' : '🔊';
@@ -107,7 +107,7 @@ export function setupUI(actions) {
     let off = false;
     try { off = localStorage.getItem('dd-iostip') === 'off'; } catch { /* bỏ qua */ }
     const landscape = innerWidth > innerHeight, barsHidden = innerHeight >= Math.min(screen.width, screen.height) - 30;
-    if (!iPhoneSafari || off || !landscape || barsHidden || ss.get('dd-iostip') || menu.hidden || !fsTip.hidden || !welcome.hidden) return false;
+    if (!splash.hidden || !iPhoneSafari || off || !landscape || barsHidden || ss.get('dd-iostip') || menu.hidden || !fsTip.hidden || !welcome.hidden) return false;
     ss.set('dd-iostip', '1');
     fsFrom = null;
     fsTip.classList.add('auto');
@@ -154,7 +154,7 @@ export function setupUI(actions) {
   // Bảng chào lần đầu vào trang: Bắt đầu (kèm toàn màn hình) hoặc bỏ qua hướng dẫn.
   $('wStart').addEventListener('click', () => { ss.set('dd-fs', canFullscreen ? 'on' : 'off'); begin(0); });
   $('wSkip').addEventListener('click', () => { tutorialSeen.set(); welcome.hidden = true; });
-  function maybeWelcome() { if (!tutorialSeen.get() && menu.hidden === false && fsTip.hidden) welcome.hidden = false; }
+  function maybeWelcome() { if (splash.hidden && !tutorialSeen.get() && menu.hidden === false && fsTip.hidden) welcome.hidden = false; }
 
   // Mở trong Zalo / Messenger...: cảnh báo nằm ngay trên màn xoay ngang (app thường không cho xoay).
   const href = location.href.replace(/[?&]debug\b/, '');
@@ -210,10 +210,9 @@ export function setupUI(actions) {
   // Chiến thắng: bảng điểm -> "Còn tiếp…" -> tự về menu sau vài giây (chạm để về ngay)
   let tbcTimer = 0;
   const vcard = /** @type {HTMLElement} */ (victory.querySelector('.vcard')), tbc = /** @type {HTMLElement} */ (victory.querySelector('.tbc'));
-  $('vNext').addEventListener('click', () => {
-    vcard.hidden = true; tbc.hidden = false;
-    audio.arp([1.5, 1.26, 1], 0.4);
-    tbcTimer = window.setTimeout(toMenu, 3800);
+  $('vNext').addEventListener('click', () => {   // -> "Còn tiếp…": trang thứ 6 bay về phía mặt trăng (vẽ trên canvas)
+    victory.hidden = true;
+    actions.tbc();
   });
   tbc.addEventListener('click', toMenu);
 
@@ -226,6 +225,19 @@ export function setupUI(actions) {
 
   setBackground('menu');
   buildLevels();
+
+  // Màn mở đầu: chạm bất kỳ đâu -> mở khóa âm thanh (phải nằm TRONG sự kiện chạm) + nhạc nền phát ngay.
+  // ?debug (quay video, kiểm thử) bỏ qua màn này.
+  let splashOpen = !new URLSearchParams(location.search).has('debug'), loaded = false;
+  splash.hidden = !splashOpen;
+  const afterSplash = () => { if (!maybeIosTip()) maybeWelcome(); };
+  splash.addEventListener('click', () => {
+    if (!splashOpen) return;
+    splashOpen = false;
+    audio.unlock();
+    splash.classList.add('out');
+    setTimeout(() => { splash.hidden = true; if (loaded) afterSplash(); }, 500);
+  });
 
   return {
     toMenu,
@@ -243,7 +255,8 @@ export function setupUI(actions) {
     setSkippable(on) { $('skip').hidden = !on; },
     /** @param {import('../engine/assets.js').Assets} A */
     ready(A) {
-      if (!maybeIosTip()) maybeWelcome();   // iPhone cầm ngang: nhắc toàn màn hình trước, xong mới tới bảng chào
+      loaded = true;
+      if (!splashOpen && splash.hidden) afterSplash();   // iPhone cầm ngang: nhắc toàn màn hình trước, xong mới tới bảng chào
       cssSprite($('mdog'), A, 'idle');
       cssSprite($('mg1'), A, 'ghost');
       cssSprite($('mg2'), A, 'ghost');

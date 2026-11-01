@@ -9,14 +9,14 @@ export const CX = 480;
 export const CY = 385;
 export const GY = 455;
 
-/** @typedef {'HAT_UP'|'HAT_DOWN'|'VERTICAL'|'HORIZONTAL'|'DIAGONAL'|'HEART'|'LIGHTNING'|'SHIELD'} Spell */
+/** @typedef {'HAT_UP'|'HAT_DOWN'|'VERTICAL'|'HORIZONTAL'|'DIAGONAL'|'HEART'|'LIGHTNING'|'SHIELD'|'HOURGLASS'} Spell */
 
 /** Bùa mà ma thường đòi hỏi. Tim chỉ dành cho ma hồi máu, sét là bùa đặc biệt. @type {Spell[]} */
 export const POOL = ['HAT_UP', 'HAT_DOWN', 'VERTICAL', 'HORIZONTAL', 'DIAGONAL'];
 
 /** Ký hiệu hiển thị trên đầu ma và trong trận pháp. */
 export const GLYPH = {
-  HEART: '♥', VERTICAL: '│', HORIZONTAL: '─', HAT_UP: '∧', HAT_DOWN: '∨', DIAGONAL: '╱', LIGHTNING: '⚡', SHIELD: '◯',
+  HEART: '♥', VERTICAL: '│', HORIZONTAL: '─', HAT_UP: '∧', HAT_DOWN: '∨', DIAGONAL: '╱', LIGHTNING: '⚡', SHIELD: '◯', HOURGLASS: '⧗',
 };
 
 export const BAL = {
@@ -36,49 +36,89 @@ export const BAL = {
   symHitR: 55,        // ký tự rơi trúng nhân vật nếu lệch ít hơn
   popR: 60,           // chạm trong bán kính này để phá ký tự
   introSec: 1.6,      // thời gian nhân vật chạy vào màn
-  beamBand: 60,       // bùa ngang/dọc/chéo trúng ma cách đường vẽ ít hơn ... px
-  vPad: 45,           // bùa V trúng ma trong khung chữ V nới rộng thêm ... px
   comboBonus: 10,     // điểm thưởng cho mỗi con ma thêm trong một nét
   // Lá chắn: vẽ vòng tròn QUANH nhân vật, mỗi màn dùng được 1 lần
   shieldSec: 5,       // thời gian chắn (giây)
   shieldR: 125,       // bán kính vòng chắn quanh tâm nhân vật
   shieldPush: 170,    // lúc bật: ma trong vùng 2×shieldR bị hất ra xa thêm ... px
+  // Đồng hồ cát (trang 3): vẽ hình đồng hồ cát / số 8 -> mọi ma + đồ rơi chậm lại; mỗi màn 1 lần
+  slowSec: 6,
+  slowK: 0.35,
+  // Ma tàng hình (màn 3+): lúc ẩn lúc hiện theo chu kỳ (giây)
+  invPeriod: 3.2,
+  // Vua Mực pha 2: tắt đèn (màn hình tối đen, chỉ còn đôi mắt Cún) mỗi ... giây, kéo dài ... giây
+  darkEvery: 9,
+  darkSec: 1.6,
+  // Bạn đồng hành: người chơi CHẠM biểu tượng ở góc màn hình để gọi; hồi chiêu ... giây
+  munEvery: 8,        // Mèo Mun: phóng sao xóa 1 ký hiệu của con ma gần nhất
+  frogEvery: 12,      // Ếch Ộp: nhảy ra nuốt trọn con ma thường gần nhất
+  frogReach: 9999,
+  batEvery: 15,       // Dơi Bin: hét sóng âm đẩy lùi mọi ma thường + phá đồ rơi
+  palStart: 2,        // đầu màn: chờ ... giây mới gọi được lần đầu
+  batPush: 120,
 };
 
-/** Màu riêng của từng bùa (trận pháp, tia quét). */
+/**
+ * Cốt truyện "Cuốn Sách Mực": mỗi boss giữ 1 trang sách; nhặt trang thì mở khóa bùa / bạn đồng hành cho các màn SAU.
+ * Màn được dùng bùa X khi màn >= UNLOCK[X]. Màn tập (0) chỉ dạy nét cơ bản + tim + chạm.
+ */
+export const UNLOCK = { LIGHTNING: 2, SHIELD: 3, HOURGLASS: 4 };
+/** Bạn đồng hành có mặt từ màn ... */
+export const PALS = { mun: 2, frog: 3, bat: 4 };
+/** @param {number} level */
+export const hasSpell = (level, s) => !(s in UNLOCK) || level >= UNLOCK[s];
+/** @param {number} level */
+export const palsAt = (level) => Object.keys(PALS).filter((k) => level >= PALS[k]);
+
+/** Màu riêng của từng bùa (trận pháp, tia nối tới ma trúng). */
 export const SPELL_COLOR = {
   HEART: '#ff4f8b', LIGHTNING: '#f2b600', VERTICAL: '#ff7a1a', HORIZONTAL: '#1fa8e8',
-  DIAGONAL: '#8a5cf5', HAT_UP: '#2ec27e', HAT_DOWN: '#e2475f', SHIELD: '#14a89c',
+  DIAGONAL: '#8a5cf5', HAT_UP: '#2ec27e', HAT_DOWN: '#e2475f', SHIELD: '#14a89c', HOURGLASS: '#c97a12',
 };
 /** Kiểu hiệu ứng niệm bùa trên đầu nhân vật: 1 mực viết · 2 pháp ấn vẽ tay · 3 nét bùa bay lên · 4 truyện tranh. */
 export const SIGIL_STYLE = 1;
 
 /** Bùa -> animation. Dọc/ngang/V/chéo dùng chung 'cast_h'; tim & sét có animation riêng. */
-export const SPELL_ANIM = { HEART: 'love', LIGHTNING: 'bolt' };
+export const SPELL_ANIM = { HEART: 'love', LIGHTNING: 'bolt', HOURGLASS: 'bolt' };
 export const DEFAULT_CAST_ANIM = 'cast_h';
 
 /**
- * @typedef {{n:number, m:number, v:number, s:number, t:number, boss:boolean}} Wave
+ * @typedef {'wisp'|'swarm'|'inv'|'knight'} Kind
+ *   wisp: ma thường · swarm: đàn ma con (nhỏ, CẢ ĐÀN cùng 1 ký hiệu) · inv: ma tàng hình (lúc ẩn lúc hiện)
+ *   knight: ma khiên (ký hiệu đầu luôn là ⚡: phải dùng sét phá khiên trước)
+ * @typedef {{n:number, m:number, v:number, s:number, t:number, boss:boolean, kind:Kind}} Wave
  *   n: số ma xuất hiện cùng lúc · m: số bùa mỗi ma · v: hệ số tốc độ · s: hệ số cỡ
  *   t: giây xuất hiện tính từ đầu màn · boss: là boss?
- * @typedef {{name:string, bg:string, heal:number, waves:Wave[]}} Level
+ * @typedef {{key:string, name:string, fly:string, hit:string, attack:string|null, drops:string[], king?:boolean}} Boss
+ *   fly/hit/attack: tên sprite · drops: sprite đồ ném xuống ('flame' = lửa xanh vẽ bằng code)
+ * @typedef {{name:string, bg:string, heal:number, waves:Wave[], boss:Boss|null, page:string}} Level
  *   bg: khóa ảnh nền (web/assets/img/<bg>.webp) · heal: giây giữa 2 lần ma tim xuất hiện (khi thiếu máu)
+ *   page: trang sách boss giữ (sprite page_<page>)
  */
+/** @type {Record<string, Boss>} */
+export const BOSSES = {
+  book: { key: 'book', name: 'Ma Sách', fly: 'book_fly', hit: 'book_hit', attack: null, drops: ['drop_spider', 'drop_skull'] },
+  chand: { key: 'chand', name: 'Ma Đèn Chùm', fly: 'chand_fly', hit: 'chand_hit', attack: 'chand_attack', drops: ['flame'] },
+  pumpkin: { key: 'pumpkin', name: 'Ma Bí Ngô', fly: 'pumpkin_fly', hit: 'pumpkin_fly', attack: null, drops: ['drop_pumpkin'] },
+  cauldron: { key: 'cauldron', name: 'Phù Thủy Vạc', fly: 'cauldron_fly', hit: 'cauldron_hit', attack: 'cauldron_attack', drops: ['drop_potion'] },
+  king: { key: 'king', name: 'Vua Mực', fly: 'king_fly', hit: 'king_hit', attack: 'king_laugh', drops: ['drop_skull', 'drop_spider', 'drop_pumpkin', 'drop_potion'], king: true },
+};
 /** @returns {Level} */
-const level = (name, bg, heal, waves) => ({
-  name, bg, heal,
-  waves: waves.map(([n, m, v, s, t, boss]) => ({ n, m, v, s, t, boss: !!boss })),
+const level = (name, bg, heal, boss, page, waves) => ({
+  name, bg, heal, boss: BOSSES[boss] || null, page,
+  waves: waves.map(([n, m, v, s, t, boss, kind]) => ({ n, m, v, s, t, boss: !!boss, kind: kind || 'wisp' })),
 });
 
-// Lấy từ LEVEL_CONFIG bản Python, đã cân bằng lại bằng bot giả lập (npm run balance).
-//                  [số ma, bùa/ma, tốc độ, cỡ, giây, boss?]
+// Cân bằng bằng bot giả lập (npm run balance).
+//                  [số ma, bùa/ma, tốc độ, cỡ, giây, boss?, loại]
 /** @type {Record<number, Level>} */
 export const LEVELS = {
-  1: level('Thư viện tím', 'bg1', 5, [[3, 1, 1.1, 1, 1], [4, 1, 1.2, 1, 5], [3, 2, 1.25, 1, 9], [1, 5, 1.3, 1.2, 13]]),
-  2: level('Đại sảnh nến xanh', 'bg2', 8, [[4, 1, 1.5, 1, 1], [5, 2, 1.55, 1, 5], [3, 3, 1.6, 1, 9], [1, 7, 1.7, 1.4, 13]]),
-  3: level('Nghĩa địa trăng tròn', 'bg3', 10, [[3, 2, 1.6, 1, 1], [4, 3, 1.65, 1, 5], [2, 4, 1.7, 1.2, 10], [1, 6, 1.8, 2, 14]]),
-  4: level('Hang phù thủy — BOSS', 'bg4', 6, [[4, 2, 1.65, 1, 1], [4, 3, 1.7, 1, 6], [2, 4, 1.75, 1.2, 11], [1, 5, 1.7, 3, 16, true]]),
+  1: level('Thư viện tím', 'bg1', 5, 'book', 'bolt', [[3, 1, 1.15, 1, 1], [4, 1, 1.3, 1, 5], [4, 2, 1.35, 1, 9], [1, 3, 1.1, 1, 14, true]]),
+  2: level('Đại sảnh nến xanh', 'bg2', 7, 'chand', 'shield', [[5, 1, 1.6, 1, 1], [7, 1, 1.6, 0.62, 4.5, false, 'swarm'], [5, 2, 1.7, 1, 8.5], [8, 2, 1.65, 0.6, 13, false, 'swarm'], [4, 2, 1.75, 1, 17], [1, 4, 1.3, 1, 21, true]]),
+  3: level('Nghĩa địa trăng tròn', 'bg3', 8, 'pumpkin', 'hourglass', [[5, 2, 1.75, 1, 1], [5, 2, 1.65, 1, 5, false, 'inv'], [6, 2, 1.8, 1, 9.5], [5, 2, 1.7, 1, 14, false, 'inv'], [7, 2, 1.75, 0.6, 18, false, 'swarm'], [1, 5, 1.4, 1, 22, true]]),
+  4: level('Hang phù thủy', 'bg4', 7, 'cauldron', 'blank', [[6, 2, 1.85, 1, 1], [4, 2, 1.6, 1, 5, false, 'knight'], [8, 2, 1.8, 0.6, 9.5, false, 'swarm'], [5, 2, 1.75, 1, 13.5, false, 'inv'], [4, 2, 1.65, 1, 17.5, false, 'knight'], [1, 6, 1.45, 1, 22, true]]),
+  5: level('Mái tháp dưới trăng', 'bg5', 6, 'king', 'star', [[6, 2, 1.9, 1, 1], [8, 2, 1.85, 0.6, 4.5, false, 'swarm'], [5, 2, 1.8, 1, 8.5, false, 'inv'], [4, 2, 1.7, 1, 12.5, false, 'knight'], [5, 2, 1.85, 1, 16.5], [1, 6, 1.45, 1, 21, true]]),
 };
 export const LAST = Math.max(...Object.keys(LEVELS).map(Number));
 /** Màn tập (level 0): không có đợt ma, ma do game/tutorial.js đặt từng con; không cắn, không tự qua màn. */
-export const TUTORIAL = level('Màn tập', 'bg1', 1e9, []);
+export const TUTORIAL = level('Màn tập', 'bg1', 1e9, '', '', []);

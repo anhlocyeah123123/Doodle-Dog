@@ -47,6 +47,19 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
       </div>
     </section>
 
+    <!-- mở trang: cô Cú thủ thư chào, chạm 1 lần để bật âm thanh (trình duyệt điện thoại chỉ cho kêu sau khi chạm) -->
+    <section id="splash" aria-label="Chạm để bắt đầu">
+      <div class="sbub">Chào mừng tới <b>Doodle Dog!</b></div>
+      <div class="owlbox">
+        <div id="owl" class="spr">
+          <span class="mt">MT</span>
+          <i class="h1">✦</i><i class="h2">✦</i>
+        </div>
+      </div>
+      <p class="tap">👆 Chạm vào màn hình để bắt đầu</p>
+      <p class="tap2 ios-only">🔊 Chạm để bật âm thanh · vẫn im lặng? Gạt tắt <b>chế độ im lặng</b> ở cạnh máy</p>
+    </section>
+
     <!-- góc trên phải: luôn thấy ở menu, không bị bảng che -->
     <div id="corner">
       <button class="mute icon" aria-label="Bật/tắt âm thanh">🔊</button>
@@ -56,16 +69,17 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
     <section id="help" class="sheet" hidden>
       <div class="card">
         <h2>Cách vẽ bùa</h2>
-        <p class="hint">Vẽ ký hiệu trên đầu ma. Vẽ <b>ngay trên hàng ma</b> để quét trúng nhiều con một lúc; vẽ chỗ trống thì trúng con gần nhất.</p>
+        <p class="hint">Vẽ ký hiệu trên đầu ma, ở đâu trên màn hình cũng được. <b>Mọi con ma có cùng ký hiệu</b> đều trúng một lúc. Hạ boss mỗi màn để lấy lại <b>trang sách phép</b>: mở khóa bùa mới và bạn đồng hành (Mèo Mun, Ếch Ộp, Dơi Bin).</p>
         <ul class="spells">
-          <li><svg viewBox="0 0 60 60"><path d="M8 50 30 10 52 50"/><circle cx="8" cy="50" r="4"/></svg><b>V lên</b><span>nổ vùng trong chữ V</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M8 10 30 50 52 10"/><circle cx="8" cy="10" r="4"/></svg><b>V xuống</b><span>nổ vùng trong chữ V</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M30 6V54"/><circle cx="30" cy="6" r="4"/></svg><b>Dọc</b><span>quét cả cột</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M6 30H54"/><circle cx="6" cy="30" r="4"/></svg><b>Ngang</b><span>quét cả hàng</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M10 50 50 10"/><circle cx="10" cy="50" r="4"/></svg><b>Chéo</b><span>quét đường chéo</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M10 6 46 20 12 36 48 52"/><circle cx="10" cy="6" r="4"/></svg><b>Sét</b><span>mọi ma, hồi 4 giây</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M8 50 30 10 52 50"/><circle cx="8" cy="50" r="4"/></svg><b>V lên</b><span>ma có ∧</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M8 10 30 50 52 10"/><circle cx="8" cy="10" r="4"/></svg><b>V xuống</b><span>ma có ∨</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M30 6V54"/><circle cx="30" cy="6" r="4"/></svg><b>Dọc</b><span>ma có │</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M6 30H54"/><circle cx="6" cy="30" r="4"/></svg><b>Ngang</b><span>ma có ─</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M10 50 50 10"/><circle cx="10" cy="50" r="4"/></svg><b>Chéo</b><span>ma có ╱</span></li>
           <li><svg viewBox="0 0 60 60"><path d="M30 52C4 34 8 10 24 12c4 1 6 4 6 8 0-4 2-7 6-8 16-2 20 22-6 40Z"/></svg><b>Tim</b><span>hồi máu (ma ♥)</span></li>
-          <li><svg viewBox="0 0 60 60"><path d="M30 9a22 22 0 1 0 .1 0"/><path d="M38 6l-8 3 6 6" /><circle cx="30" cy="9" r="4"/></svg><b>Vòng quanh Cún</b><span>lá chắn 5s · 1 lần/màn</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M10 6 46 20 12 36 48 52"/><circle cx="10" cy="6" r="4"/></svg><b>Sét</b><span>mọi ma mất 1 bùa · từ màn 2</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M30 9a22 22 0 1 0 .1 0"/><path d="M38 6l-8 3 6 6" /><circle cx="30" cy="9" r="4"/></svg><b>Vòng quanh Cún</b><span>lá chắn · từ màn 3</span></li>
+          <li><svg viewBox="0 0 60 60"><path d="M14 8H46L14 52H46Z"/><circle cx="14" cy="8" r="4"/></svg><b>Đồng hồ cát</b><span>ma chậm lại · từ màn 4</span></li>
           <li><svg viewBox="0 0 60 60"><circle cx="30" cy="30" r="9" class="fill"/><circle cx="30" cy="30" r="20"/></svg><b>Chạm</b><span>phá đồ boss ném</span></li>
         </ul>
         <div class="row">
@@ -79,7 +93,7 @@ else if (/Android/i.test(navigator.userAgent)) document.documentElement.classLis
       <div class="card narrow vcard">
         <div class="stars" aria-hidden="true">✦ ✧ ✦</div>
         <h2>Bạn đã chiến thắng!</h2>
-        <p class="hint">Cún đã hạ ma trùm và lấy lại cuốn sách phép.</p>
+        <p class="hint">Cún đã lấy lại đủ 5 trang và làm bạn với Mực Con.</p>
         <p class="vscore">Điểm: <b id="vScore">0</b></p>
         <button id="vNext" class="big">Tiếp tục</button>
       </div>

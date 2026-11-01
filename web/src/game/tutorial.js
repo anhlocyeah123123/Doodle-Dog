@@ -6,13 +6,15 @@
 // Thêm/bớt bước: sửa mảng STEPS. Mỗi bước có:
 //   say   lời dặn (dòng chính) · sub lời phụ
 //   setup(sim)  đặt ma / chỉnh trạng thái cho bước này
-//   done  'clear' (hết ma thường) | 'heal' (vẽ tim xong) | 'shield' (bật lá chắn) | 'pop' (chạm phá ký tự)
+//   done  'clear' (hết ma thường) | 'heal' (vẽ tim xong) | 'shield' (bật lá chắn) | 'slow' (đồng hồ cát) | 'pop' (chạm phá ký tự)
+//
+// STEPS = màn tập đầu game (nét cơ bản, tim, chạm). LESSONS[màn] = bài học ngắn của Cô Cú khi vừa mở khóa bùa mới.
 //   demo(sim)  nét mẫu cho bàn tay (tọa độ thế giới), hoặc {tap:[x,y]} cho thao tác chạm
 import { CX, CY, BAL } from '../core/config.js';
 
 /** @typedef {import('../core/sim.js').Sim} Sim */
 /** @typedef {{path?:number[][], tap?:number[]}} Demo */
-/** @typedef {{say:string, sub?:string, setup:(sim:Sim)=>void, done:'clear'|'heal'|'shield'|'pop', demo:(sim:Sim)=>Demo|null}} Step */
+/** @typedef {{say:string, sub?:string, setup:(sim:Sim)=>void, done:'clear'|'heal'|'shield'|'slow'|'pop', demo:(sim:Sim)=>Demo|null}} Step */
 
 // ---- nét mẫu quanh vị trí con ma (gx, gy) ----
 const line = (ax, ay, bx, by) => [[ax, ay], [bx, by]];
@@ -23,6 +25,7 @@ const SHAPE = {
   HAT_UP: (x, y) => [[x - 80, y + 70], [x, y - 75], [x + 80, y + 70]],
   HAT_DOWN: (x, y) => [[x - 80, y - 70], [x, y + 75], [x + 80, y - 70]],
   LIGHTNING: (x, y) => [[x - 60, y - 80], [x + 55, y - 35], [x - 55, y + 15], [x + 60, y + 65]],
+  HOURGLASS: (x, y) => [[x - 70, y - 80], [x + 70, y - 80], [x - 70, y + 80], [x + 70, y + 80], [x - 70, y - 80]],
   HEART: (x, y) => {   // tim vẽ 1 nét từ đỉnh giữa
     const p = [];
     for (let i = 0; i <= 36; i++) {
@@ -49,31 +52,47 @@ export const STEPS = [
     setup: (s) => { s.place(CX - 250, 245, ['VERTICAL']); }, done: 'clear', demo: demoFor },
   { say: 'Vẽ chữ V ngược ∧', sub: 'Một nét liền: lên rồi xuống',
     setup: (s) => { s.place(CX + 230, 250, ['HAT_UP']); }, done: 'clear', demo: demoFor },
-  { say: 'Một nét quét CẢ HÀNG ma!', sub: 'Vẽ ngang ngay qua hàng ma để diệt cùng lúc',
-    setup: (s) => { for (const x of [CX - 340, CX - 175, CX + 175, CX + 340]) s.place(x, 240, ['HORIZONTAL']); },
-    done: 'clear', demo: () => ({ path: line(CX - 420, 248, CX + 420, 248) }) },
+  { say: 'Cùng ký hiệu: diệt hết một lúc!', sub: 'Vẽ 1 lần ở đâu cũng được, mọi ma có ký hiệu đó đều trúng',
+    setup: (s) => { for (const [x, y] of [[CX - 330, 215], [CX - 150, 285], [CX + 170, 205], [CX + 330, 275]]) s.place(x, y, ['HAT_DOWN']); },
+    done: 'clear', demo: () => ({ path: SHAPE.HAT_DOWN(CX, 170) }) },
   { say: 'Ma có nhiều bùa: vẽ lần lượt', sub: 'Bùa sáng màu là bùa cần vẽ tiếp theo',
     setup: (s) => { s.place(CX - 240, 255, ['DIAGONAL', 'HAT_DOWN']); }, done: 'clear', demo: demoFor },
-  { say: 'Bùa SÉT: vẽ hình zig-zag', sub: 'Mọi con ma mất 1 bùa · phải chờ hồi 4 giây mới dùng lại',
-    setup: (s) => { s.boltCd = 0; s.place(CX - 330, 250, ['VERTICAL']); s.place(CX - 170, 235, ['HAT_DOWN']); s.place(CX + 300, 245, ['DIAGONAL']); },
-    done: 'clear', demo: () => ({ path: SHAPE.LIGHTNING(CX + 90, 230) }) },
   { say: 'Bị ma cắn mất máu? Vẽ TRÁI TIM ♥', sub: 'Ma trái tim chỉ xuất hiện khi bạn thiếu máu, và không cắn',
     setup: (s) => { s.hp = BAL.hp - 1; s.place(CX + 230, 245, ['HEART'], true); }, done: 'heal', demo: demoFor },
-  { say: 'Vẽ VÒNG TRÒN quanh Cún: lá chắn!', sub: `Hất ma ra xa, chặn đồ rơi trong ${BAL.shieldSec} giây · mỗi màn chỉ dùng 1 lần`,
-    setup: (s) => { s.shieldUsed = false; s.shield = 0; s.place(CX - 170, 270, ['VERTICAL']); s.place(CX + 175, 265, ['HAT_UP']); },
-    done: 'shield', demo: () => ({ path: Array.from({ length: 41 }, (_, i) => { const a = -Math.PI / 2 - (i / 40) * Math.PI * 2; return [CX + Math.cos(a) * 130, CY - 10 + Math.sin(a) * 118]; }) }) },
   { say: 'Boss ném đồ xuống: CHẠM để phá!', sub: 'Chạm nhẹ vào quả bí đang rơi',
     setup: (s) => { s.drop(CX + 170, 28, 150); }, done: 'pop',
     demo: (s) => (s.syms[0] ? { tap: [s.syms[0].x, s.syms[0].y] } : null) },
 ];
 
-const PRAISE = ['Giỏi lắm!', 'Chuẩn luôn!', 'Tuyệt!', 'Đỉnh!', 'Quá đẹp!', 'Xuất sắc!', 'Hồi máu rồi!', 'Chắn ngon!', 'Hoàn hảo!'];
+/** Bài học khi mở khóa bùa mới (đầu màn đó). @type {Record<number, Step[]>} */
+export const LESSONS = {
+  2: [
+  { say: 'Trang 1 mở khóa bùa SÉT: vẽ zig-zag', sub: 'Mọi con ma mất 1 bùa · phải chờ hồi 4 giây mới dùng lại',
+    setup: (s) => { s.boltCd = 0; s.place(CX - 330, 250, ['VERTICAL']); s.place(CX - 170, 235, ['HAT_DOWN']); s.place(CX + 300, 245, ['DIAGONAL']); },
+    done: 'clear', demo: () => ({ path: SHAPE.LIGHTNING(CX + 90, 230) }) },
+  ],
+  3: [
+  { say: 'Trang 2 mở khóa LÁ CHẮN: vẽ vòng tròn quanh Cún', sub: `Hất ma ra xa, chặn đồ rơi trong ${BAL.shieldSec} giây · mỗi màn chỉ dùng 1 lần`,
+    setup: (s) => { s.shieldUsed = false; s.shield = 0; s.place(CX - 170, 270, ['VERTICAL']); s.place(CX + 175, 265, ['HAT_UP']); },
+    done: 'shield', demo: () => ({ path: Array.from({ length: 41 }, (_, i) => { const a = -Math.PI / 2 - (i / 40) * Math.PI * 2; return [CX + Math.cos(a) * 130, CY - 10 + Math.sin(a) * 118]; }) }) },
+  ],
+  4: [
+    { say: 'Trang 3 mở khóa ĐỒNG HỒ CÁT ⧗', sub: `Vẽ 2 tam giác chạm đỉnh (hoặc số 8): ma chậm lại ${BAL.slowSec} giây · mỗi màn 1 lần`,
+      setup: (s) => { s.slowUsed = false; s.slow = 0; s.place(CX - 250, 230, ['VERTICAL']); s.place(CX + 260, 240, ['HAT_DOWN']); },
+      done: 'slow', demo: () => ({ path: SHAPE.HOURGLASS(CX + 60, 210) }) },
+    { say: 'Ma khiên: phá khiên bằng SÉT trước!', sub: 'Ký hiệu ⚡ trên đầu = phải dùng sét, rồi mới tới ký hiệu thường',
+      setup: (s) => { s.boltCd = 0; s.place(CX + 230, 240, ['LIGHTNING', 'HORIZONTAL'], false, 'knight'); }, done: 'clear', demo: demoFor },
+  ],
+};
+
+const PRAISE = ['Giỏi lắm!', 'Chuẩn luôn!', 'Tuyệt!', 'Đỉnh!', 'Quá đẹp!', 'Xuất sắc!', 'Hoàn hảo!'];
 const DEMO_DELAY = 0.6;   // giây trước khi bàn tay vẽ mẫu lần đầu
 const IDLE_AGAIN = 2.2;   // người chơi vẽ sai / ngừng tay bao lâu thì hiện lại bàn tay
 
 export class Tutorial {
-  /** @param {Sim} sim @param {import('./effects.js').Effects} fx */
-  constructor(sim, fx) {
+  /** @param {Sim} sim @param {import('./effects.js').Effects} fx @param {Step[]} [steps] */
+  constructor(sim, fx, steps = STEPS) {
+    this.steps = steps;
     this.sim = sim;
     this.fx = fx;
     this.i = -1;
@@ -86,12 +105,12 @@ export class Tutorial {
     this.next();
   }
 
-  get step() { return STEPS[this.i]; }
-  get count() { return `${Math.min(this.i + 1, STEPS.length)}/${STEPS.length}`; }
+  get step() { return this.steps[this.i]; }
+  get count() { return `${Math.min(this.i + 1, this.steps.length)}/${this.steps.length}`; }
 
   next() {
     this.i++;
-    if (this.i >= STEPS.length) { this.done = true; return; }
+    if (this.i >= this.steps.length) { this.done = true; return; }
     const sim = this.sim;
     sim.ghosts = []; sim.syms = [];
     this.step.setup(sim);
@@ -101,7 +120,7 @@ export class Tutorial {
   /** Đọc sự kiện của Sim TRƯỚC khi Session xử lý hiệu ứng. @param {any[]} ev */
   observe(ev) {
     for (const e of ev) {
-      if (e.k === 'heal' || e.k === 'pop' || e.k === 'shield') { if (this.step?.done === e.k) this.got = true; }
+      if (e.k === 'heal' || e.k === 'pop' || e.k === 'shield' || e.k === 'slow') { if (this.step?.done === e.k) this.got = true; }
       if (e.k === 'miss') this.fail();
     }
   }
@@ -122,7 +141,7 @@ export class Tutorial {
     if (st.done === 'pop' && !sim.syms.length && !this.got) sim.drop(CX + 170, 28, 150);   // rơi mất thì thả quả khác
     const ok = st.done === 'clear' ? !sim.ghosts.some((g) => !g.heal) : this.got;
     if (ok) {
-      this.fx.toast(PRAISE[this.i % PRAISE.length], 'level', 1.2);
+      this.fx.toast(PRAISE[(this.i + this.steps.length) % PRAISE.length], 'level', 1.2);
       this.wait = 1.3;
       return;
     }

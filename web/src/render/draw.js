@@ -1,7 +1,7 @@
 // @ts-check
 // Chỉ VẼ: đọc trạng thái (sim + hiệu ứng) và vẽ lên canvas. Không thay đổi trạng thái game.
 // Ảnh nền là CSS phía sau canvas trong suốt -> trình duyệt tự ghép, không tốn công vẽ lại mỗi khung.
-import { W, GY, CX, CY, GLYPH, BAL } from '../core/config.js';
+import { W, GY, CX, CY, GLYPH, BAL, BOSSES, hasSpell } from '../core/config.js';
 import { INK, ink, inkStroke, inkText, inkHeart, bubble } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
@@ -10,23 +10,52 @@ import { VIEW, uiK } from './view.js';
 import { drawDemo, drawBanner } from './guide.js';
 
 const TAU = Math.PI * 2;
+/** Tuỳ chọn vẽ (chỉ đổi qua ?debug, vd khi quay video giới thiệu): hud = false -> ẩn máu/điểm/tiêu đề. */
+export const drawOpts = { hud: true };
 
-/** Vẽ 1 frame của dải sprite; chân nhân vật neo tại (x, y). */
+/** Số khung đang chạy của sprite sau `elapsed` giây (lặp hoặc dừng ở khung cuối). */
+export function frameOf(s, elapsed) {
+  return s.loop ? (((elapsed * s.fps) | 0) % s.n + s.n) % s.n : Math.max(0, Math.min(s.n - 1, (elapsed * s.fps) | 0));
+}
+
+/**
+ * Vẽ khung f của sprite. anchor 'b': chân tại (x, y) · 'c': tâm tại (x, y).
+ * Ảnh có thể lưu nét hơn cỡ hiển thị (s.k < 1).
+ */
+export function blitSprite(c, A, name, f, x, y, sc = 1, flip = false, anchor = 'b') {
+  const s = A.sprites[name];
+  if (!s?.img) return null;
+  const k = (s.k || 1) * sc, w = s.w * k, h = s.h * k;
+  const oy = anchor === 'b' ? -h : -h / 2;
+  if (flip) {
+    c.save(); c.translate(x, y); c.scale(-1, 1);
+    c.drawImage(s.img, f * s.w, 0, s.w, s.h, -w / 2, oy, w, h);
+    c.restore();
+  } else c.drawImage(s.img, f * s.w, 0, s.w, s.h, x - w / 2, y + oy, w, h);
+  return { w, h };
+}
+
+/** Vẽ sprite theo thời gian; chân nhân vật neo tại (x, y). */
 export function drawSprite(c, A, name, elapsed, x, y, flip = false, scale = 1) {
   const s = A.sprites[name];
   if (!s?.img) return;
-  const f = s.loop ? ((elapsed * s.fps) | 0) % s.n : Math.min(s.n - 1, (elapsed * s.fps) | 0);
-  const w = s.w * scale, h = s.h * scale;
-  if (flip) {
-    c.save(); c.translate(x, y); c.scale(-1, 1);
-    c.drawImage(s.img, f * s.w, 0, s.w, s.h, -w / 2, -h, w, h);
-    c.restore();
-  } else {
-    c.drawImage(s.img, f * s.w, 0, s.w, s.h, x - w / 2, y - h, w, h);
-  }
+  blitSprite(c, A, name, frameOf(s, elapsed), x, y, scale, flip, 'b');
 }
 
-function drawGhost(c, A, g, t) {
+/** Sprite theo thời gian, tâm tại (x, y). */
+export function drawCentered(c, A, name, elapsed, x, y, sc = 1, flip = false) {
+  const s = A.sprites[name];
+  if (!s?.img) return null;
+  return blitSprite(c, A, name, frameOf(s, elapsed), x, y, sc, flip, 'c');
+}
+
+/** Độ hiện của ma tàng hình (0.12 .. 1) theo thời gian. */
+export const invAlpha = (g, t) => {
+  const v = Math.sin((t / BAL.invPeriod) * Math.PI * 2 + g.id * 1.7);
+  return 0.12 + 0.88 * Math.max(0, Math.min(1, v * 1.6 + 0.35));
+};
+
+function drawGhost(c, A, g, t, st) {
   const y = g.y + Math.sin(t * 3 + g.id) * 6;
   if (g.heal) {
     const im = A.img.ghost_heart;
@@ -36,19 +65,41 @@ function drawGhost(c, A, g, t) {
     bubble(c, g.x, y - 58, 19, GLYPH.HEART, '#ff4f8b');
     return;
   }
-  const gs = A.sprites[g.boss ? 'boss' : 'ghost'];
-  if (!gs?.img) return;
-  const sc = g.boss ? 2.4 : g.sz;
-  const f = (((t + g.id * 0.13) * gs.fps) | 0) % gs.n;
-  const w = gs.w * sc, h = gs.h * sc;
-  if (g.vx > 0) {   // ma vẽ quay trái; bay sang phải thì lật
-    c.save(); c.translate(g.x, y); c.scale(-1, 1);
-    c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, -w / 2, -h / 2, w, h);
-    c.restore();
+  let box = null, alpha = 1;
+  if (g.boss) {
+    const B = BOSSES[g.kind] || BOSSES.book;
+    let name = B.fly, el = t;
+    if (g.hitT != null && st - g.hitT < 0.4) { name = B.hit; el = st - g.hitT; }
+    else if (B.attack && g.atk != null && st - g.atk < 0.7) { name = B.attack; el = st - g.atk; }
+    if (B.king && g.ph === 2 && name === B.fly) name = 'king_laugh';   // pha 2: Vua Mực cười khoái trá
+    box = drawCentered(c, A, A.sprites[name]?.img ? name : B.fly, el, g.x, y, 1, false);
+    if (!box) {   // sprite boss chưa tải xong: dùng tạm boss cũ
+      const gs = A.sprites.boss;
+      if (gs?.img) { const f = ((t * gs.fps) | 0) % gs.n; c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, g.x - gs.w * 1.2, y - gs.h * 1.2, gs.w * 2.4, gs.h * 2.4); box = { w: gs.w * 2.4, h: gs.h * 2.4 }; }
+    }
+  } else if (g.kind === 'knight' && A.sprites.knight_fly?.img) {
+    if (!g.brk) box = drawCentered(c, A, 'knight_fly', t + g.id * 0.13, g.x, y, g.sz, g.vx < 0);
+    else {
+      const s = A.sprites.knight_break, el = st - g.brk;
+      box = blitSprite(c, A, 'knight_break', el < 0.4 ? frameOf(s, el) : 3, g.x, y, g.sz, g.vx < 0, 'c');
+    }
   } else {
-    c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, g.x - w / 2, y - h / 2, w, h);
+    if (g.kind === 'inv') { alpha = invAlpha(g, t); c.globalAlpha = alpha; }
+    const gs = A.sprites.ghost;
+    if (!gs?.img) return;
+    const sc = g.sz;
+    const f = (((t + g.id * 0.13) * gs.fps) | 0) % gs.n;
+    const w = gs.w * sc, h = gs.h * sc;
+    if (g.vx > 0) {   // ma vẽ quay trái; bay sang phải thì lật
+      c.save(); c.translate(g.x, y); c.scale(-1, 1);
+      c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, -w / 2, -h / 2, w, h);
+      c.restore();
+    } else c.drawImage(gs.img, f * gs.w, 0, gs.w, gs.h, g.x - w / 2, y - h / 2, w, h);
+    box = { w, h };
+    c.globalAlpha = 1;
   }
-  const top = y - h / 2 - 4;
+  if (!box) return;
+  const top = y - box.h / 2 - 4;
   if (g.boss) {   // boss: cả chuỗi bùa, bùa hiện tại tô vàng to hơn
     // Boss to, xuất hiện cao trên mép màn -> kẹp dãy bùa xuống dưới dòng tiêu đề để luôn nhìn thấy ngay từ đầu.
     const by = Math.max(top - 6, -VIEW.oy + 82 * uiK());
@@ -60,12 +111,76 @@ function drawGhost(c, A, g, t) {
       const done = i < g.i, cur = i === g.i;
       bubble(c, x0 + i * gap, by, cur ? 19 : 15, GLYPH[g.seq[i]], done ? '#aaa' : INK, cur ? '#ffe066' : done ? '#ddd' : '#fff');
     }
-  } else {
-    const r = Math.round(19 * Math.min(1.35, uiK()));   // màn nhỏ: ký hiệu to hơn cho dễ đọc
-    bubble(c, g.x, top - r + 7, r, GLYPH[g.seq[g.i]]);
+  } else if (alpha > 0.45) {   // ma tàng hình: lúc ẩn thì ký hiệu cũng ẩn
+    const r = Math.round(19 * Math.min(1.35, uiK()) * (g.kind === 'swarm' ? 0.85 : 1));   // màn nhỏ: ký hiệu to hơn cho dễ đọc
+    c.globalAlpha = alpha;
+    const sym = g.seq[g.i];
+    bubble(c, g.x, top - r + 7, r, GLYPH[sym], sym === 'LIGHTNING' ? '#d99a00' : INK, sym === 'LIGHTNING' ? '#fff3b0' : '#fff');
     const left = g.seq.length - g.i - 1;
     if (left > 0) inkText(c, '+' + left, g.x + 22, top - 2, 16);
+    c.globalAlpha = 1;
   }
+}
+
+/** Đồ boss ném (sprite) hoặc lửa xanh (vẽ bằng code). */
+function drawDrop(c, A, s, t) {
+  if (s.ch === 'flame') {
+    const fl = 1 + Math.sin(t * 30 + s.x) * 0.08;
+    const g = c.createRadialGradient(s.x, s.y + 4, 2, s.x, s.y, 30);
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(0.35, 'rgba(110,190,255,.9)'); g.addColorStop(1, 'rgba(40,90,255,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.moveTo(s.x, s.y - 34 * fl);
+    c.bezierCurveTo(s.x + 22, s.y - 8, s.x + 18, s.y + 18, s.x, s.y + 18);
+    c.bezierCurveTo(s.x - 18, s.y + 18, s.x - 22, s.y - 8, s.x, s.y - 34 * fl);
+    c.fill();
+    return;
+  }
+  if (A.sprites[s.ch]?.img) { drawCentered(c, A, s.ch, t + s.x * 0.01, s.x, s.y, 1); return; }
+  const e = cached('sym|pumpkin', 52, 52, 26, 40, (g) => {   // chưa tải sprite: quả bí vẽ tay
+    g.fillStyle = '#ff9a3c'; g.strokeStyle = INK; g.lineWidth = 3;
+    g.beginPath(); g.arc(26, 27, 21, 0, Math.PI * 2); g.fill(); g.stroke();
+  });
+  blit(c, e, s.x, s.y);
+}
+
+/** Chỗ đứng của bạn đồng hành trong các đoạn phim (đoạn kết). */
+export const PAL_POS = { mun: [CX - 100, GY], frog: [CX + 108, GY], bat: [CX - 160, GY - 150] };
+const PAL_FACE = { mun: 'mun_idle', frog: 'frog_idle', bat: 'bat_fly' };
+export const PAL_NAME = { mun: 'Mun', frog: 'Ộp', bat: 'Bin' };
+
+/** Vị trí biểu tượng bạn đồng hành thứ i (tọa độ khung nhìn, góc dưới trái) + bán kính. */
+export function palIcon(i) {
+  const k = uiK(), r = 34 * k;   // ≥ ~48px chạm được trên điện thoại
+  return { x: 16 * k + r + i * (r * 2 + 14 * k), y: VIEW.h - 16 * k - r, r };
+}
+
+/** Biểu tượng bạn đồng hành (góc dưới trái): sẵn sàng thì viền vàng nhấp nháy, đang hồi thì xám + vòng đếm giờ. */
+function drawPalIcons(c, A, pals, t) {
+  pals.forEach((p, i) => {
+    const { x, y, r } = palIcon(i), ready = p.cd <= 0;
+    c.save();
+    c.fillStyle = ready ? '#fffbe8' : '#d9d9e6'; c.strokeStyle = INK; c.lineWidth = 3;
+    c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+    c.save(); c.clip();
+    const s = A.sprites[PAL_FACE[p.who]];
+    if (s?.img) {
+      const sc = (r * 2.1) / (s.h * (s.k || 1));
+      c.globalAlpha = ready ? 1 : 0.45;
+      blitSprite(c, A, PAL_FACE[p.who], 0, x, y + r * 1.05, sc, false, 'b');
+      c.globalAlpha = 1;
+    }
+    c.restore();
+    c.beginPath(); c.arc(x, y, r, 0, TAU); c.stroke();
+    if (ready) {   // sẵn sàng: viền vàng phập phồng
+      c.strokeStyle = '#ffc400'; c.lineWidth = 4 + Math.sin(t * 6) * 1.5;
+      c.beginPath(); c.arc(x, y, r + 5, 0, TAU); c.stroke();
+    } else {   // đang hồi: vòng đếm giờ
+      c.strokeStyle = '#1fa8e8'; c.lineWidth = 5;
+      c.beginPath(); c.arc(x, y, r + 4, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - p.cd / p.max)); c.stroke();
+    }
+    c.restore();
+    inkText(c, PAL_NAME[p.who], x, y + r + 2, 15 * uiK(), 'center');
+  });
 }
 
 /** Vòm lá chắn nét mực quanh nhân vật; nhấp nháy trong giây cuối. */
@@ -114,6 +229,36 @@ function drawFx(c, f) {
     c.globalAlpha = 1;
   } else if (f.t === 'sigil') {
     drawSigil(c, f);
+  } else if (f.t === 'poof' && f.A) {
+    const s = f.A.sprites.fx_poof;
+    if (s?.img) blitSprite(c, f.A, 'fx_poof', Math.min(s.n - 1, (k * s.n) | 0), f.x, f.y, f.sc || 1, false, 'c');
+  } else if (f.t === 'cameo' && f.A) {   // bạn đồng hành hiện ra chốc lát rồi biến mất
+    const s = f.A.sprites[f.name];
+    if (s?.img) {
+      c.globalAlpha = Math.min(1, k * 8, (1 - k) * 5);
+      const pop = 0.7 + 0.3 * Math.min(1, k * 6);
+      blitSprite(c, f.A, f.name, Math.min(s.n - 1, (k * s.n) | 0), f.x, f.y, (f.sc || 1) * pop, !!f.flip, 'c');
+      c.globalAlpha = 1;
+    }
+  } else if (f.t === 'star') {   // Mèo Mun phóng sao tới con ma
+    const x = f.x0 + (f.x1 - f.x0) * k, y = f.y0 + (f.y1 - f.y0) * k - Math.sin(k * Math.PI) * 60;
+    c.save(); c.translate(x, y); c.rotate(k * 9);
+    c.beginPath();
+    for (let i = 0; i < 10; i++) { const r = i % 2 ? 7 : 16, a = (i / 10) * TAU - Math.PI / 2; i ? c.lineTo(Math.cos(a) * r, Math.sin(a) * r) : c.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    c.closePath(); c.fillStyle = '#ffe066'; c.fill(); c.strokeStyle = INK; c.lineWidth = 3; c.stroke();
+    c.restore();
+  } else if (f.t === 'tongue') {   // Ếch Ộp lè lưỡi
+    const r = k < 0.5 ? k * 2 : (1 - k) * 2;
+    c.strokeStyle = INK; c.lineWidth = 11; c.beginPath(); c.moveTo(f.x0, f.y0); c.lineTo(f.x0 + (f.x1 - f.x0) * r, f.y0 + (f.y1 - f.y0) * r); c.stroke();
+    c.strokeStyle = '#ff7aa8'; c.lineWidth = 6; c.stroke();
+  } else if (f.t === 'sonic') {   // Dơi Bin hét: vòng sóng âm lan ra
+    c.strokeStyle = '#fff'; c.lineWidth = 4;
+    for (let i = 0; i < 3; i++) {
+      const kk = k - i * 0.15; if (kk <= 0) continue;
+      c.globalAlpha = Math.max(0, 1 - kk);
+      c.beginPath(); c.arc(f.x, f.y, 30 + kk * 520, 0, TAU); c.stroke();
+    }
+    c.globalAlpha = 1;
   }
 }
 
@@ -144,20 +289,26 @@ function drawHud(c, sim, title = true) {
   for (let i = 0; i < BAL.hp; i++) inkHeart(c, 36 + i * 40, 38, 16, i < sim.hp ? '#ff6b9a' : 'rgba(255,255,255,.3)');
   inkText(c, String(sim.score), 22, 92, 30);
   if (title) inkText(c, `Màn ${sim.level} · Đợt ${sim.wave}/${sim.nWaves}`, VIEW.w / 2 / k, 40, 24, 'center');
-  const r = 1 - sim.boltCd / BAL.boltCd;   // thanh hồi chiêu sét
-  c.fillStyle = '#fff'; c.fillRect(56, 108, 120, 14);
-  c.fillStyle = r >= 1 ? '#ffc400' : '#9bb'; c.fillRect(56, 108, 120 * r, 14);
-  c.strokeStyle = INK; c.lineWidth = 3; c.strokeRect(56, 108, 120, 14);
-  inkText(c, '⚡', 24, 124, 20, 'left', '#d99a00');
-  // lá chắn: còn (xanh) / đang chắn (đếm giờ) / đã dùng (gạch chéo)
-  const sx = 200, sy = 115, on = sim.shield > 0, used = sim.shieldUsed && !on;
-  c.globalAlpha = used ? 0.45 : 1;
-  c.fillStyle = on ? '#9be7df' : used ? '#ddd' : '#fff'; c.strokeStyle = INK; c.lineWidth = 3;
-  c.beginPath(); c.arc(sx, sy, 13, 0, TAU); c.fill(); c.stroke();
-  c.strokeStyle = '#14a89c'; c.lineWidth = 3;
-  c.beginPath(); c.arc(sx, sy, 7, 0, TAU); c.stroke();
-  if (on) { c.strokeStyle = '#14a89c'; c.lineWidth = 4; c.beginPath(); c.arc(sx, sy, 18, -Math.PI / 2, -Math.PI / 2 + TAU * (sim.shield / BAL.shieldSec)); c.stroke(); }
-  if (used) { c.strokeStyle = '#e2283c'; c.lineWidth = 3; c.beginPath(); c.moveTo(sx - 11, sy + 11); c.lineTo(sx + 11, sy - 11); c.stroke(); }
+  if (hasSpell(sim.spellLv, 'LIGHTNING')) {
+    const r = 1 - sim.boltCd / BAL.boltCd;   // thanh hồi chiêu sét
+    c.fillStyle = '#fff'; c.fillRect(56, 108, 120, 14);
+    c.fillStyle = r >= 1 ? '#ffc400' : '#9bb'; c.fillRect(56, 108, 120 * r, 14);
+    c.strokeStyle = INK; c.lineWidth = 3; c.strokeRect(56, 108, 120, 14);
+    inkText(c, '⚡', 24, 124, 20, 'left', '#d99a00');
+  }
+  // lá chắn / đồng hồ cát: còn / đang dùng (đếm giờ) / đã dùng (gạch chéo)
+  const icon = (sx, on, used, left, col, glyph) => {
+    const sy = 115;
+    c.globalAlpha = used ? 0.45 : 1;
+    c.fillStyle = on ? '#fff3c4' : used ? '#ddd' : '#fff'; c.strokeStyle = INK; c.lineWidth = 3;
+    c.beginPath(); c.arc(sx, sy, 13, 0, TAU); c.fill(); c.stroke();
+    inkText(c, glyph, sx, sy + 6, 16, 'center', col);
+    if (on) { c.strokeStyle = col; c.lineWidth = 4; c.beginPath(); c.arc(sx, sy, 18, -Math.PI / 2, -Math.PI / 2 + TAU * left); c.stroke(); }
+    if (used) { c.strokeStyle = '#e2283c'; c.lineWidth = 3; c.beginPath(); c.moveTo(sx - 11, sy + 11); c.lineTo(sx + 11, sy - 11); c.stroke(); }
+    c.globalAlpha = 1;
+  };
+  if (hasSpell(sim.spellLv, 'SHIELD')) icon(200, sim.shield > 0, sim.shieldUsed && sim.shield <= 0, sim.shield / BAL.shieldSec, '#14a89c', '◯');
+  if (hasSpell(sim.spellLv, 'HOURGLASS')) icon(240, sim.slow > 0, sim.slowUsed && sim.slow <= 0, sim.slow / BAL.slowSec, '#c97a12', '⧗');
   c.globalAlpha = 1;
   c.restore();
 }
@@ -172,6 +323,42 @@ function drawPanel(c, msg) {
   });
   c.save(); c.translate(0, VIEW.h / 2); c.scale(k, k);
   blit(c, e, 0, -80);
+  c.restore();
+}
+
+/** Đồng hồ cát: màn hình ngả màu cát, mặt đồng hồ mờ quay chậm ở giữa. */
+function drawSlow(c, left, t) {
+  const a = Math.min(1, left * 2, (BAL.slowSec - left) * 4);
+  c.fillStyle = `rgba(255,196,110,${0.13 * a})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
+  c.save(); c.globalAlpha = 0.22 * a; c.translate(VIEW.w / 2, VIEW.h * 0.42); c.rotate(Math.sin(t * 0.8) * 0.1);
+  inkText(c, '⧗', 0, 40, 130, 'center', '#c97a12');
+  c.restore();
+}
+
+/** Vua Mực tắt đèn: tối đen, chỉ còn đôi mắt Cún sáng + dấu "?" (giống hiệu ứng trong bản Doodle). */
+function drawDark(c, A, left, dogX) {
+  const a = Math.min(1, left * 6, (BAL.darkSec - left) * 8);
+  c.fillStyle = `rgba(2,2,8,${0.95 * a})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
+  const s = A.sprites.fx_eyes;
+  if (!s?.img || a < 0.6) return;
+  const el = BAL.darkSec - left, f = el % 1.1 > 0.95 ? 2 : 0;   // chớp mắt
+  c.save(); c.translate(VIEW.ox, VIEW.oy);
+  blitSprite(c, A, 'fx_eyes', f, dogX, GY - 70, 0.55, false, 'c');
+  c.restore();
+}
+
+/** Đèn sân khấu lúc vào màn: cả màn tối, một luồng sáng chiếu xuống Cún. a: độ đậm 0..1 */
+function drawSpot(c, dogX, a) {
+  const x = dogX + VIEW.ox, top = 0, bot = GY + VIEW.oy + 12;
+  const wt = 40, wb = 150;
+  c.save();
+  c.beginPath(); c.rect(0, 0, VIEW.w, VIEW.h);
+  c.moveTo(x - wt, top); c.lineTo(x + wt, top); c.lineTo(x + wb, bot); c.ellipse(x, bot, wb, 26, 0, 0, Math.PI); c.lineTo(x - wt, top);
+  c.fillStyle = `rgba(4,6,22,${0.82 * a})`; c.fill('evenodd');
+  const g = c.createLinearGradient(0, top, 0, bot);
+  g.addColorStop(0, `rgba(255,250,215,${0.35 * a})`); g.addColorStop(1, `rgba(255,250,215,${0.08 * a})`);
+  c.beginPath(); c.moveTo(x - wt, top); c.lineTo(x + wt, top); c.lineTo(x + wb, bot); c.ellipse(x, bot, wb, 26, 0, 0, Math.PI); c.closePath();
+  c.fillStyle = g; c.fill();
   c.restore();
 }
 
@@ -204,14 +391,10 @@ export function draw(c, A, v) {
     }
     c.strokeStyle = danger ? 'rgba(255,60,80,.85)' : 'rgba(255,255,255,.3)'; c.lineWidth = 3;
     c.beginPath(); c.ellipse(s.x, GY + 4, 30, 7, 0, 0, TAU); c.stroke();
-    const e = cached(`sym|${s.ch}`, 52, 52, 26, 40, (g) => {
-      g.fillStyle = '#ff9a3c'; g.strokeStyle = INK; g.lineWidth = 3;   // nền tròn: vẫn thấy rõ dù máy thiếu font emoji
-      g.beginPath(); g.arc(26, 27, 21, 0, Math.PI * 2); g.fill(); g.stroke();
-      g.font = '30px sans-serif'; g.textAlign = 'center'; g.fillText(s.ch, 26, 38);
-    });
-    blit(c, e, s.x, s.y);
+    drawDrop(c, A, s, t);
   }
-  for (const g of sim.ghosts) drawGhost(c, A, g, t);
+  for (const g of sim.ghosts) drawGhost(c, A, g, t, sim.t);
+  if (v.owl) drawSprite(c, A, v.owl.a, t - v.owl.t0, -VIEW.ox + 95, GY, false);   // Cô Cú dạy bùa (góc trái)
   drawSprite(c, A, dog.state, t - dog.t0, dog.x, GY, dog.flip);
   if (sim.shield > 0) drawShield(c, sim.shield, t);
   for (const f of fx.list) drawFx(c, f);
@@ -227,10 +410,15 @@ export function draw(c, A, v) {
   inkStroke(c, trail.pts, trail.down ? 1 : trail.fade * 4, strokeK(trail.touch));
   c.restore();
 
+  if (sim.slow > 0) drawSlow(c, sim.slow, t);
+  if (sim.dark > 0) drawDark(c, A, sim.dark, dog.x);
+  if (v.spot > 0) drawSpot(c, dog.x, v.spot);
   if (fx.flash > 0) { c.fillStyle = `rgba(255,255,230,${fx.flash * 2})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }
   if (fx.red > 0) { c.strokeStyle = `rgba(255,40,60,${fx.red * 1.6})`; c.lineWidth = 46; c.strokeRect(0, 0, VIEW.w, VIEW.h); }
-  drawHud(c, sim, !v.guide);
+  if (drawOpts.hud) drawHud(c, sim, !v.guide);
+  if (drawOpts.hud && v.pals && sim.pals.length) drawPalIcons(c, A, sim.pals, t);
   if (v.guide) drawBanner(c, v.guide.say, v.guide.sub, v.guide.a);
   fx.toasts.forEach((o, i, all) => drawToast(c, o, all.length - 1 - i));   // mới nhất nằm dưới cùng
   if (v.msg) drawPanel(c, v.msg);
+  if (v.fade > 0) { c.fillStyle = `rgba(4,6,22,${Math.min(1, v.fade)})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }   // chuyển cảnh: tối dần / sáng dần
 }

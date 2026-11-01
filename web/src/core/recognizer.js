@@ -7,7 +7,7 @@
 //   2. làm mượt                       -> bớt rung tay (cảm ứng làm mượt mạnh hơn chuột)
 //   3. rút gọn Ramer–Douglas–Peucker  -> chỉ giữ các khúc gấp LỚN so với kích thước nét
 //   4. bỏ móc nhỏ ở đầu/cuối nét      -> ngón tay hay "quệt" lúc chạm xuống và lúc nhấc lên
-// rồi mới đếm số khúc gấp: 0 = đường thẳng, 1 = chữ V, ≥2 = sét. Vòng kín = tim.
+// rồi mới đếm số khúc gấp: 0 = đường thẳng, 1 = chữ V, ≥2 = sét. Vòng kín = tim. Nét tự cắt qua giữa = đồng hồ cát.
 
 /** @typedef {number[]} Pt */
 /**
@@ -132,6 +132,7 @@ export function recognize(raw, opts = {}) {
   if (size < MIN_SIZE) return null;
 
   const len = pathLen(p), a = p[0], z = p[N - 1], d = dist(a, z);
+  if (w > 50 && h > 50 && crossesSelf(p, size)) return 'HOURGLASS';   // nét tự cắt chéo ở giữa: đồng hồ cát ⧗ / số 8
   if (d < len * CLOSED && w > 30 && h > 30) return opts.around && encloses(p, opts.around[0], opts.around[1]) ? 'SHIELD' : 'HEART';
 
   const s = len / (d || 1) < STRAIGHT ? [a, z] : skeleton(p, size, T.eps);
@@ -146,6 +147,33 @@ export function recognize(raw, opts = {}) {
   }
   if (corners >= 2) return 'LIGHTNING';
   return s[1][1] < (s[0][1] + s[2][1]) / 2 ? 'HAT_UP' : 'HAT_DOWN';
+}
+
+/** Giao điểm 2 đoạn ab, cd (null nếu không cắt). */
+function cross(a, b, c, d) {
+  const r = [b[0] - a[0], b[1] - a[1]], q = [d[0] - c[0], d[1] - c[1]], den = r[0] * q[1] - r[1] * q[0];
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + t * r[0], a[1] + t * r[1]] : null;
+}
+
+/**
+ * Nét có tự cắt chéo QUA GIỮA không (đồng hồ cát ⧗, số 8, ∞).
+ * Bỏ qua chỗ cắt gần điểm đầu/cuối (vẽ tim, vòng tròn hay bị chồng đuôi lên đầu) và vòng xoắn nhỏ (rung tay).
+ * @param {Pt[]} p đã lấy mẫu
+ */
+function crossesSelf(p, size) {
+  const n = p.length, gap = Math.floor(n * 0.2), far = size * 0.3;
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = i + gap; j < n - 1; j++) {
+      if (n - 1 - (j - i) < gap) break;
+      const x = cross(p[i], p[i + 1], p[j], p[j + 1]);
+      if (!x || dist(x, p[0]) <= far || dist(x, p[n - 1]) <= far) continue;
+      // cắt CHÉO thật (đồng hồ cát ~90°), không phải 2 đoạn gần song song chồng lên nhau (vẽ vòng tròn lố tay)
+      if (Math.abs(turnCos(p[i], p[i + 1], [p[i + 1][0] + p[j + 1][0] - p[j][0], p[i + 1][1] + p[j + 1][1] - p[j][1]])) < 0.85) return true;
+    }
+  }
+  return false;
 }
 
 /**

@@ -280,3 +280,51 @@ html:not(.ios):not(.fs-ok) #rotate .best { display: none; }   /* không có mẹ
 #rotate .rbox button { max-width: 100%; white-space: normal; font-size: 17px; padding: 6px 14px; min-height: 44px; }
 
 #fsTip:not(.auto) .auto-only { display: none; }
+
+/* ---------- màn mở đầu: cô Cú thủ thư + chạm để bật âm thanh ---------- */
+#splash {
+  position: absolute; inset: 0; z-index: 8; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u) * 1.6);
+  padding: calc(var(--st) + 6px) calc(var(--sr) + 6px) calc(var(--sb) + 6px) calc(var(--sl) + 6px);
+  background: linear-gradient(rgba(7, 10, 32, .35), rgba(7, 10, 32, .7)), url(../assets/img/splash.webp) center / cover;
+  transition: opacity .5s;
+}
+#splash.out { opacity: 0; pointer-events: none; }
+#splash[hidden] { display: none; }
+#splash ~ #corner { z-index: 9; }
+.sbub {
+  position: relative; background: #fff; border: 3px solid var(--ink); border-radius: 22px;
+  padding: calc(var(--u) * 1.4) calc(var(--u) * 3.4); font-size: max(16px, calc(var(--u) * 5)); text-align: center;
+  box-shadow: 4px 5px 0 rgba(10, 10, 60, .5); animation: pop .5s .3s both;
+}
+.sbub b { color: #2b6fe0; }
+.sbub::after {
+  content: ""; position: absolute; left: 50%; bottom: -14px; width: 22px; height: 22px; translate: -50% 0; rotate: 45deg;
+  background: #fff; border: solid var(--ink); border-width: 0 3px 3px 0;
+}
+@keyframes pop { from { scale: .6; opacity: 0; } }
+.owlbox { --k: max(.8, calc(var(--sc) * 1.55)); position: relative; width: calc(230px * var(--k)); height: calc(209.5px * var(--k)); flex: none; }
+#owl {
+  --w: 230px; --h: 209.5px; --n: 12; --dur: 2s; background-image: url(../assets/sprites/owl.webp);
+  background-size: calc(var(--w) * var(--n)) var(--h);   /* ảnh gốc 2x cho nét sắc */
+  left: 0; top: 0; transform-origin: 0 0; scale: var(--k);
+}
+#owl .mt {
+  position: absolute; left: 114px; top: 117px; translate: -50% -50%;
+  font: 700 17px/1 var(--hand); color: var(--ink); letter-spacing: 1px;
+  text-shadow: -1.5px -1.5px 0 #fff, 1.5px -1.5px 0 #fff, -1.5px 1.5px 0 #fff, 1.5px 1.5px 0 #fff, 0 0 4px #fff; rotate: -4deg;   /* Safari không hỗ trợ paint-order cho chữ HTML -> dùng bóng trắng làm viền */
+}
+#owl i { position: absolute; font-style: normal; color: #9fd8ff; text-shadow: 0 0 6px #4aa8ff; font-size: 16px; opacity: 0; animation: float 2.4s ease-out infinite; }
+#owl .h1 { left: 150px; top: 52px; }
+#owl .h2 { left: 62px; top: 42px; animation-delay: 1.2s; font-size: 13px; }
+@keyframes float { 0% { opacity: 0; translate: 0 10px; } 25% { opacity: 1; } 100% { opacity: 0; translate: 6px -26px; } }
+.tap {
+  margin: 0; color: #fff; font-size: max(17px, calc(var(--u) * 5.2)); font-weight: 700; text-align: center;
+  text-shadow: 0 2px 0 var(--ink), 0 0 12px rgba(7, 10, 32, .9); animation: blink 1.4s ease-in-out infinite;
+}
+@keyframes blink { 50% { opacity: .45; } }
+.tap2 {
+  margin: 0; max-width: 92%; color: #fff; font-size: max(13px, calc(var(--u) * 3.4)); text-align: center;
+  background: rgba(7, 10, 32, .7); border: 2px solid #7fb4ff; border-radius: 12px; padding: 4px 12px;
+}
+.tap2 b { color: #9fd0ff; }

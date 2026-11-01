@@ -4,9 +4,10 @@ import { loadAssets } from './engine/assets.js';
 import { bindStroke, lockPage } from './engine/input.js';
 import { startLoop } from './engine/loop.js';
 import { audio } from './engine/audio.js';
-import { draw } from './render/draw.js';
+import { draw, drawOpts } from './render/draw.js';
 import { drawCutscene } from './render/cutscene.js';
 import { drawOutro } from './render/outro.js';
+import { drawPage, drawEnding, drawTbc } from './render/story.js';
 import { ink } from './render/ink.js';
 import { setCacheScale } from './render/cache.js';
 import { VIEW, fitView } from './render/view.js';
@@ -43,7 +44,7 @@ function layout() {
   const r = safe.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
   // Phim mở đầu / đoạn kết: canvas phủ CẢ màn hình (kể cả tai thỏ, thanh Home) để nền đen / trời sao kín mép.
-  const cinema = session?.state === 'cutscene' || session?.state === 'outro';
+  const cinema = ['cutscene', 'outro', 'ending', 'tbc'].includes(session?.state || '');
   const st = stageEl.getBoundingClientRect();
   fitView(r.width, r.height, cinema ? { dx: st.left - r.left, dy: st.top - r.top, w: st.width, h: st.height } : null);
   const cw = VIEW.w * VIEW.s, ch = VIEW.h * VIEW.s;
@@ -68,7 +69,8 @@ const ui = setupUI({
   start: (level) => session?.begin(level),
   story: () => session?.startStory(),
   skip: () => session?.skip(),
-  quit: () => { if (session) { session.state = 'idle'; session.sim = null; session.tut = null; session.outro = null; } layout(); ctx.clearRect(0, 0, VIEW.w, VIEW.h); },
+  quit: () => { if (session) { session.state = 'idle'; session.sim = null; session.tut = null; session.outro = null; session.page = null; session.ending = null; session.tbcT = -1; } layout(); ctx.clearRect(0, 0, VIEW.w, VIEW.h); },
+  tbc: () => { session?.startTbc(); layout(); },
   setPaused: (p) => { loop.paused = p; },
   isPlaying: () => !!session && session.state !== 'idle',
 });
@@ -79,6 +81,9 @@ const loop = startLoop(
     if (!A || !session) return;
     if (session.state === 'cutscene') drawCutscene(ctx, A, session.cutT, ink.low);
     else if (session.state === 'outro' && session.outro) drawOutro(ctx, A, session.outro, ink.low);
+    else if (session.state === 'page' && session.page) drawPage(ctx, A, session.page);
+    else if (session.state === 'ending' && session.ending) drawEnding(ctx, A, session.ending);
+    else if (session.state === 'tbc') drawTbc(ctx, A, session.tbcT);
     else if (session.sim) draw(ctx, A, session.view());
   },
   () => { if (tier < TIERS.length - 1) { tier++; applyQuality(); } },
@@ -100,7 +105,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 
 // ?debug: mở cửa sau cho kiểm thử tự động (không ảnh hưởng người chơi thường)
 if (new URLSearchParams(location.search).has('debug')) {
-  /** @type {any} */ (window).__dd = { get session() { return session; }, get tier() { return tier; }, get stats() { return loop.stats; }, get view() { return VIEW; },
+  /** @type {any} */ (window).__dd = { get session() { return session; }, get tier() { return tier; }, get stats() { return loop.stats; }, get view() { return VIEW; }, drawOpts, audio,
     pause(v) { loop.paused = v; },
     step(n = 1) { for (let i = 0; i < n; i++) session?.update(1 / 60); },
   };

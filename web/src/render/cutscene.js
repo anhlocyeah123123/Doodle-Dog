@@ -1,53 +1,44 @@
 // @ts-check
-// Phim mở đầu (~12.5 giây), vẽ hoàn toàn bằng canvas từ sprite có sẵn -> không tốn dung lượng video.
+// Phim mở đầu "Cuốn Sách Mực" (~14 giây), vẽ hoàn toàn bằng canvas từ sprite -> không tốn dung lượng video.
 // Kịch bản theo mốc thời gian (giây):
-//   0.0  Đêm Halloween, Cún ôn bùa bên cuốn sách phép phát sáng
-//   2.6  Đèn chớp, sấm -> Cún giật mình
-//   3.0  Lũ ma ùa vào từ hai bên, "Hù!"
-//   4.4  Ma trùm lao xuống, 5.9 cướp cuốn sách rồi bay mất
-//   7.0  Cún buồn -> 8.3 rút đũa, nổi giận "Trả sách đây!!" (máy quay zoom vào)
-//  10.8  Tiêu đề "Lấy lại sách phép!" -> sang màn tập
-// Sửa kịch bản: chỉnh các mốc trong hàm draw() và CUES.
-import { W, CX, GY } from '../core/config.js';
+//   0.0  Toàn cảnh Học viện Bút Mực trong đêm Halloween (ảnh lâu đài, máy quay đẩy chậm)
+//   2.6  Thư viện: Cún ôn bùa bên Sách Phép Gốc, Cô Cú dặn dò
+//   5.3  Sấm! Tắt đèn: tối đen chỉ còn đôi mắt Cún + "??" (học từ bản Doodle)
+//   6.6  Đèn sáng: Vua Mực đã ở đó, cười "Hô hô hô!" -> 7.9 cướp sách
+//   8.6  Xé sách: 5 trang bay ra 5 hướng · 10.2 bay mất
+//  11.0  Cô Cú: "Phải lấy lại từng trang!" · Cún: "Để con!!"
+//  12.4  Tiêu đề -> sang màn tập
+// Sửa kịch bản: chỉnh các mốc trong drawCutscene() và CUES.
+import { CX, GY } from '../core/config.js';
 import { INK, inkText } from './ink.js';
 import { cached, blit, measure } from './cache.js';
 import { FONT } from '../engine/assets.js';
-import { drawSprite } from './draw.js';
+import { drawSprite, drawCentered, blitSprite } from './draw.js';
 import { VIEW, uiK, edges } from './view.js';
 
-export const DURATION = 12.5;
+export const DURATION = 14;
 const TAU = Math.PI * 2;
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
+export const clamp01 = (v) => Math.max(0, Math.min(1, v));
 /** Tiến độ 0..1 trong khoảng [a, b]. */
-const seg = (t, a, b) => clamp01((t - a) / (b - a));
-const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
-const lerp = (a, b, k) => a + (b - a) * k;
+export const seg = (t, a, b) => clamp01((t - a) / (b - a));
+export const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+export const lerp = (a, b, k) => a + (b - a) * k;
 /** Hiện dần trong 0.3s đầu, mờ dần 0.3s cuối của khoảng [a, b]. */
-const fadeIn = (t, a, b) => (t < a || t > b ? 0 : Math.min(1, (t - a) / 0.3, (b - t) / 0.3));
+export const fadeIn = (t, a, b) => (t < a || t > b ? 0 : Math.min(1, (t - a) / 0.3, (b - t) / 0.3));
 
 /** Âm thanh theo mốc: [giây, tên]. Session đổi tên thành tiếng thật. */
 /** @type {[number, string][]} */
-export const CUES = [[2.6, 'thunder'], [3.0, 'whoosh'], [5.9, 'grab'], [6.3, 'laugh'], [8.6, 'angry'], [10.8, 'title']];
+export const CUES = [[5.3, 'thunder'], [6.7, 'laugh'], [8.0, 'grab'], [9.4, 'rip'], [10.2, 'whoosh'], [11.7, 'angry'], [12.4, 'title']];
 
 const BOOK = { x: CX - 95, y: 300 };
-// Lũ ma: [bên vào (-1 trái, 1 phải), x đích, y đích, cỡ]
-const MINIONS = [[-1, 170, 170, 1], [-1, 300, 105, 0.85], [-1, 250, 255, 0.95], [1, 700, 115, 0.9], [1, 820, 205, 1.05], [1, 660, 255, 0.85]];
-const BOSS_HOVER = [BOOK.x + 30, 175], BOSS_GRAB = [BOOK.x + 25, 238];
-
-/** Vẽ 1 khung sprite, tâm tại (x, y). */
-function frame(c, A, name, t, x, y, sc, flip) {
-  const s = A.sprites[name];
-  if (!s?.img) return;
-  const f = ((t * s.fps) | 0) % s.n, w = s.w * sc, h = s.h * sc;
-  c.save(); c.translate(x, y); if (flip) c.scale(-1, 1);
-  c.drawImage(s.img, f * s.w, 0, s.w, s.h, -w / 2, -h / 2, w, h);
-  c.restore();
-}
+const OWL_X = CX - 270;
+/** 5 trang bay ra 5 hướng: [sprite, hướng x, hướng y] @type {[string, number, number][]} */
+const PAGES = [['page_bolt', -1, -0.6], ['page_shield', -0.7, -1], ['page_hourglass', 0.15, -1.1], ['page_blank', 0.8, -0.9], ['page_star', 1, -0.4]];
 
 /** Cuốn sách phép mở, phát sáng, viền mực. */
-function book(c, x, y, t, glow) {
+export function book(c, x, y, t, glow, sc = 1) {
   c.save();
-  c.translate(x, y); c.rotate(Math.sin(t * 1.7) * 0.07);
+  c.translate(x, y); c.scale(sc, sc); c.rotate(Math.sin(t * 1.7) * 0.07);
   if (glow > 0) {
     c.globalAlpha = 0.22 * glow; c.fillStyle = '#ffe066';
     c.beginPath(); c.arc(0, 8, 58 + Math.sin(t * 4) * 5, 0, TAU); c.fill();
@@ -74,14 +65,14 @@ function book(c, x, y, t, glow) {
     for (let i = 0; i < 6; i++) {
       const k = (t * 0.5 + i / 6) % 1;
       c.globalAlpha = glow * (1 - k);
-      c.fillRect(x + Math.sin(i * 7.3 + t) * 34 - 2, y - 10 - k * 70, 4, 4);
+      c.fillRect(x + Math.sin(i * 7.3 + t) * 34 * sc - 2, y - 10 - k * 70 * sc, 4, 4);
     }
     c.globalAlpha = 1;
   }
 }
 
 /** Bong bóng thoại kiểu truyện tranh, đuôi chỉ xuống (tọa độ thế giới). */
-function speech(c, txt, x, y, a, size = 26, tail = 0) {
+export function speech(c, txt, x, y, a, size = 26, tail = 0) {
   if (a <= 0) return;
   const w = measure(`bold ${size}px ${FONT}`, txt) + 36, h = size * 1.7;
   const e = cached(`sp|${txt}|${size}|${tail}`, w + 8, h + 30, (w + 8) / 2, h + 26, (g) => {
@@ -93,6 +84,10 @@ function speech(c, txt, x, y, a, size = 26, tail = 0) {
     g.fill(); g.stroke();
     inkText(g, txt, w / 2, h / 2 + size * 0.38, size, 'center');
   });
+  // kẹp vào trong khung nhìn để bóng thoại không bị cắt ở mép
+  const E = edges(), half = (w + 8) / 2;
+  x = Math.max(E.l + half + 6, Math.min(E.r - half - 6, x));
+  y = Math.max(y, E.t + h + 30 + 48 * uiK());   // chừa chỗ nút Bỏ qua / tạm dừng ở mép trên
   c.save(); c.globalAlpha = a;
   c.translate(x, y); c.scale(0.7 + 0.3 * Math.min(1, a * 1.5), 0.7 + 0.3 * Math.min(1, a * 1.5));
   blit(c, e, 0, 0);
@@ -100,7 +95,7 @@ function speech(c, txt, x, y, a, size = 26, tail = 0) {
 }
 
 /** Khung lời dẫn trên giấy, phía dưới màn hình (tọa độ khung nhìn). */
-function caption(c, txt, a, bar) {
+export function caption(c, txt, a, bar = 0) {
   if (a <= 0) return;
   const size = 24, w = measure(`bold ${size}px ${FONT}`, txt) + 50, h = 50;
   const e = cached(`cap|${txt}`, w + 8, h + 8, (w + 8) / 2, h + 4, (g) => {
@@ -115,22 +110,38 @@ function caption(c, txt, a, bar) {
   c.restore();
 }
 
-/** Thẻ tiêu đề cuối phim. */
-function titleCard(c, t) {
-  const a = seg(t, 10.8, 11.2), k = uiK();
+/** Chữ to giữa màn hình kèm nét cọ gạch chân (tọa độ khung nhìn). a: độ hiện, p: tiến độ nét cọ */
+export function bigTitle(c, txt, sub, a, p, y = VIEW.h / 2 - 20) {
   if (a <= 0) return;
+  const k = uiK();
   c.save();
-  c.globalAlpha = a * 0.55; c.fillStyle = '#070a20'; c.fillRect(0, 0, VIEW.w, VIEW.h);
   c.globalAlpha = a;
-  c.translate(VIEW.w / 2, VIEW.h / 2 - 20); c.scale(k * (0.85 + 0.15 * ease(a)), k * (0.85 + 0.15 * ease(a))); c.rotate(-0.03);
-  inkText(c, 'Lấy lại sách phép!', 0, 0, 64, 'center');
-  const p = ease(seg(t, 11.1, 11.8));   // nét cọ gạch chân
+  c.translate(VIEW.w / 2, y); c.scale(k * (0.85 + 0.15 * ease(a)), k * (0.85 + 0.15 * ease(a))); c.rotate(-0.03);
+  inkText(c, txt, 0, 0, 60, 'center');
+  const L = measure(`bold 60px ${FONT}`, txt) / 2 + 10;
   c.strokeStyle = '#d8430f'; c.lineWidth = 9; c.lineCap = 'round';
-  c.beginPath(); c.moveTo(-250, 24);
-  for (let i = 1; i <= 20 * p; i++) c.lineTo(-250 + i * 25, 24 + Math.sin(i * 0.9) * 5);
+  c.beginPath(); c.moveTo(-L, 24);
+  for (let i = 1; i <= 20 * p; i++) c.lineTo(-L + (i * 2 * L) / 20, 24 + Math.sin(i * 0.9) * 5);
   c.stroke();
-  if (t > 11.5) { c.globalAlpha = a * seg(t, 11.5, 11.8); inkText(c, 'Trước tiên: học vẽ bùa nhé!', 0, 82, 28, 'center'); }
+  if (sub) inkText(c, sub, 0, 80, 28, 'center');
   c.restore();
+}
+
+/** Dải đen điện ảnh trên/dưới; trả về độ cao dải. */
+export function bars(c, t, dur) {
+  const bar = 44 * uiK() * ease(seg(t, 0, 0.5)) * (1 - ease(seg(t, dur - 0.6, dur)));
+  c.fillStyle = '#05050f';
+  c.fillRect(0, 0, VIEW.w, bar); c.fillRect(0, VIEW.h - bar, VIEW.w, bar);
+  return bar;
+}
+
+/** Ảnh phủ kín khung nhìn (kiểu background-size: cover), có thể đẩy máy quay vào (zoom). */
+export function cover(c, img, zoom = 1, alpha = 1) {
+  if (!img || alpha <= 0) return;
+  const s = Math.max(VIEW.w / img.width, VIEW.h / img.height) * zoom;
+  c.globalAlpha = alpha;
+  c.drawImage(img, (VIEW.w - img.width * s) / 2, (VIEW.h - img.height * s) / 2, img.width * s, img.height * s);
+  c.globalAlpha = 1;
 }
 
 /**
@@ -142,71 +153,86 @@ function titleCard(c, t) {
  */
 export function drawCutscene(c, A, t, low = false) {
   c.clearRect(0, 0, VIEW.w, VIEW.h);
+  const E = edges();
 
   // ---- máy quay: zoom vào Cún lúc nổi giận ----
-  const z = 1 + 0.22 * ease(seg(t, 8.3, 9.0)) * (1 - ease(seg(t, 10.5, 11.0)));
-  const shake = low ? 0 : (t > 5.9 && t < 6.4 ? (6.4 - t) * 30 : t > 2.6 && t < 3.0 ? 8 : 0);
+  const z = 1 + 0.18 * ease(seg(t, 11.2, 11.8)) * (1 - ease(seg(t, 12.2, 12.6)));
+  const shake = low ? 0 : (t > 9.4 && t < 9.9 ? (9.9 - t) * 30 : t > 5.3 && t < 5.6 ? 8 : 0);
   c.save();
   c.translate(VIEW.ox, VIEW.oy);
   c.translate(CX, GY - 120); c.scale(z, z); c.translate(-CX, -(GY - 120));
   if (shake) c.translate((Math.sin(t * 90) * shake) | 0, (Math.cos(t * 77) * shake) | 0);
 
+  // ---- Cô Cú ----
+  const owl = t < 3.4 ? 'owl_idle' : t < 5.3 ? 'owl_talk' : t < 11.0 ? 'owl_panic' : t < 12.0 ? 'owl_point' : 'owl_talk';
+  drawSprite(c, A, owl, t, OWL_X, GY, false);
+  if (t > 3.5 && t < 5.2) speech(c, 'Ôn bài chăm chỉ nhé, Cún!', OWL_X + 40, GY - 150, fadeIn(t, 3.5, 5.2), 22, -20);
+  if (t > 11.0 && t < 12.4) speech(c, 'Phải lấy lại từng trang!', OWL_X + 50, GY - 140, fadeIn(t, 11.0, 12.4), 24, -24);
+
   // ---- Cún ----
-  const anim = t < 2.6 ? ['idle', 0] : t < 5.9 ? ['alert', 2.6] : t < 7.0 ? ['hit', 5.9] : t < 8.3 ? ['lose', 7.0] : ['wave', 8.3];
+  const anim = t < 5.3 ? ['idle', 0] : t < 7.9 ? ['alert', 5.3] : t < 9.0 ? ['hit', 7.9] : t < 11.4 ? ['lose', 9.0] : ['wave', 11.4];
   c.fillStyle = 'rgba(0,0,0,.28)';
   c.beginPath(); c.ellipse(CX, GY + 2, 55, 9, 0, 0, TAU); c.fill();
-  drawSprite(c, A, /** @type {string} */ (anim[0]), t - /** @type {number} */ (anim[1]), CX, GY, t < 5.9);
+  drawSprite(c, A, /** @type {string} */ (anim[0]), t - /** @type {number} */ (anim[1]), CX, GY, t < 7.9);
+  if (t > 6.7 && t < 7.8) speech(c, '!?', CX + 45, GY - 185, fadeIn(t, 6.7, 7.8), 32);
+  if (t > 11.6 && t < 12.6) speech(c, 'Để con!!', CX + 30, GY - 190, fadeIn(t, 11.6, 12.6), 34, -16);
 
-  // ma vào/ra từ ngoài mép màn hình THẬT (màn càng rộng càng phải xa hơn)
-  const E = edges(), BOSS_IN = [E.r + 200, E.t - 160], BOSS_OUT = [E.r + 240, E.t - 140];
+  // ---- Vua Mực ----
+  const HOVER = [BOOK.x + 40, 175], GRAB = [BOOK.x + 20, 230], RIP = [CX + 150, 170], OUT = [E.r + 260, E.t - 120];
+  let kx = HOVER[0], ky = HOVER[1], kAnim = 'king_laugh', kt = t;
+  if (t < 7.9) { kx = HOVER[0]; ky = HOVER[1] + Math.sin(t * 2) * 6; }
+  else if (t < 8.6) { const k = ease(seg(t, 7.9, 8.3)); kx = lerp(HOVER[0], GRAB[0], k); ky = lerp(HOVER[1], GRAB[1], k); kAnim = 'king_carry'; }
+  else if (t < 10.2) { const k = ease(seg(t, 8.6, 9.1)); kx = lerp(GRAB[0], RIP[0], k); ky = lerp(GRAB[1], RIP[1], k); kAnim = 'king_rip'; kt = t - 8.6; }
+  else { const k = ease(seg(t, 10.2, 11.2)); kx = lerp(RIP[0], OUT[0], k); ky = lerp(RIP[1], OUT[1], k); kAnim = 'king_carry'; }
+  // sách: trên bàn -> trong tay Vua Mực
+  if (t < 8.0) book(c, BOOK.x, BOOK.y + Math.sin(t * 2) * 6, t, 1 - seg(t, 5.3, 5.9) * 0.6);
+  if (t >= 6.6) drawCentered(c, A, kAnim, kt, kx, ky, 1, false);
+  if (t > 6.8 && t < 7.9) speech(c, 'Hô hô hô! Sách này của ta!', kx + 40, ky - 110, fadeIn(t, 6.8, 7.9), 24, -18);
 
-  // ---- ma trùm (dùng để tính vị trí cuốn sách khi bị cướp) ----
-  let bx = BOSS_IN[0], by = BOSS_IN[1];
-  if (t >= 4.4 && t < 5.6) { const k = ease(seg(t, 4.4, 5.6)); bx = lerp(BOSS_IN[0], BOSS_HOVER[0], k); by = lerp(BOSS_IN[1], BOSS_HOVER[1], k) + Math.sin(k * Math.PI) * -40; }
-  else if (t >= 5.6 && t < 5.9) { const k = seg(t, 5.6, 5.9) ** 2; bx = lerp(BOSS_HOVER[0], BOSS_GRAB[0], k); by = lerp(BOSS_HOVER[1], BOSS_GRAB[1], k); }
-  else if (t >= 5.9) { const k = ease(seg(t, 6.1, 7.9)); bx = lerp(BOSS_GRAB[0], BOSS_OUT[0], k); by = lerp(BOSS_GRAB[1], BOSS_OUT[1], k) - Math.sin(k * Math.PI) * 60; }
-
-  // ---- cuốn sách ----
-  if (t < 5.9) book(c, BOOK.x, BOOK.y + Math.sin(t * 2) * 6, t, 1 - seg(t, 2.6, 3.2) * 0.6);
-  else if (t < 8.0) book(c, bx - 18, by + 62, t * 3, 0.3);
-
-  // ---- lũ ma ----
-  MINIONS.forEach(([side, tx, ty, sc], i) => {
-    const t0 = 3.0 + i * 0.16, t1 = 7.1 + i * 0.12;
-    if (t < t0) return;
-    const sx = side < 0 ? E.l - 170 : E.r + 170, sy = ty + 60;
-    let x, y, vx;
-    if (t < t1) {
-      const k = ease(seg(t, t0, t0 + 0.9));
-      x = lerp(sx, tx, k); y = lerp(sy, ty, k) + Math.sin(t * 3 + i) * 8 - Math.sin(k * Math.PI) * 50; vx = k < 1 ? -side : Math.cos(t * 1.5 + i);
-    } else {
-      const k = ease(seg(t, t1, t1 + 1.3));
-      x = lerp(tx, BOSS_OUT[0], k); y = lerp(ty, BOSS_OUT[1] + i * 25, k); vx = 1;
-    }
-    frame(c, A, 'ghost', t + i * 0.13, x, y, sc, vx > 0);
-    if ((i === 0 || i === 4) && t > 3.9 && t < 5.4) speech(c, 'Hù!', x, y - 50, fadeIn(t, 3.9, 5.4), 26, i ? 10 : -10);
-  });
-  if (t >= 4.4 && t < 8.0) frame(c, A, 'boss', t, bx, by, 1.55, t >= 5.9);
-  if (t > 6.2 && t < 7.6) speech(c, 'Hô hô hô!', Math.min(bx, E.r - 90), by - 80, fadeIn(t, 6.2, 7.6), 28);
-  if (t > 3.0 && t < 5.4) speech(c, '!?', CX + 45, GY - 185, fadeIn(t, 3.0, 4.2), 32);
-  if (t > 8.6 && t < 10.7) speech(c, 'Trả sách đây!!', CX + 30, GY - 190, fadeIn(t, 8.6, 10.7), 34, -16);
+  // ---- 5 trang sách bay ra 5 hướng ----
+  if (t > 9.4 && t < 11.2) {
+    const k = seg(t, 9.4, 11.2);
+    PAGES.forEach(([name, dx, dy], i) => {
+      const x = RIP[0] + dx * 700 * ease(k), y = RIP[1] + dy * 420 * ease(k) + Math.sin(k * 12 + i) * 10;
+      c.save(); c.globalAlpha = 1 - seg(t, 10.7, 11.2);
+      c.fillStyle = 'rgba(255,240,170,.35)'; c.beginPath(); c.arc(x, y, 40, 0, TAU); c.fill();
+      c.translate(x, y); c.rotate(k * 8 * (i % 2 ? 1 : -1));
+      drawCentered(c, A, name, t, 0, 0, 0.8);
+      c.restore();
+    });
+  }
   c.restore();
 
-  // ---- lớp phủ: đêm tối, đèn chớp ----
+  // ---- lớp phủ: đêm tối, chớp sấm, tắt đèn ----
   let dark = 0.18;
-  if (t > 2.6 && t < 3.3 && !low) dark = Math.sin(t * 55) > 0 ? 0.62 : 0.05;
-  if (t > 5.9 && t < 6.05) dark = -0.5;   // lóe sáng lúc cướp sách
+  if (t > 5.3 && t < 5.5 && !low) dark = Math.sin(t * 55) > 0 ? 0.62 : 0.05;
   c.fillStyle = dark >= 0 ? `rgba(6,6,30,${dark})` : `rgba(255,255,235,${-dark})`;
   c.fillRect(0, 0, VIEW.w, VIEW.h);
+  if (t > 9.4 && t < 9.55) { c.fillStyle = 'rgba(255,255,235,.5)'; c.fillRect(0, 0, VIEW.w, VIEW.h); }   // lóe sáng lúc xé
+  if (t >= 5.5 && t < 6.6) {   // tắt đèn: chỉ còn đôi mắt
+    c.fillStyle = '#020208'; c.fillRect(0, 0, VIEW.w, VIEW.h);
+    const s = A.sprites.fx_eyes;
+    if (s?.img) {
+      c.save(); c.translate(VIEW.ox, VIEW.oy);
+      blitSprite(c, A, 'fx_eyes', t > 6.15 && t < 6.3 ? 2 : t > 6.3 ? 1 : 0, CX, GY - 70, 0.6, false, 'c');
+      c.restore();
+    }
+  }
 
-  // ---- khung phim: 2 dải đen trên/dưới ----
-  const bar = 44 * uiK() * ease(seg(t, 0, 0.5)) * (1 - ease(seg(t, DURATION - 0.6, DURATION)));
-  c.fillStyle = '#05050f';
-  c.fillRect(0, 0, VIEW.w, bar); c.fillRect(0, VIEW.h - bar, VIEW.w, bar);
+  // ---- cảnh mở đầu: toàn cảnh học viện, mờ dần sang thư viện ----
+  if (t < 3.0) {
+    cover(c, A.img.splash, 1 + 0.06 * t, 1 - seg(t, 2.6, 3.0));
+    c.fillStyle = `rgba(6,8,30,${0.25 * (1 - seg(t, 2.6, 3.0))})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
+  }
 
-  caption(c, 'Đêm Halloween, Cún đang ôn bùa trong thư viện…', fadeIn(t, 0.4, 2.5), bar);
-  caption(c, 'Bỗng lũ ma ùa vào!', fadeIn(t, 3.0, 5.4), bar);
-  caption(c, 'Ma trùm cướp mất cuốn sách phép!', fadeIn(t, 6.0, 8.1), bar);
-  titleCard(c, t);
+  const bar = bars(c, t, DURATION);
+  caption(c, 'Đêm Halloween ở Học viện Bút Mực…', fadeIn(t, 0.4, 2.7), bar);
+  caption(c, 'Cún ôn bùa bên Sách Phép Gốc', fadeIn(t, 3.0, 5.2), bar);
+  caption(c, 'Vua Mực cướp sách và xé ra 5 trang!', fadeIn(t, 8.4, 10.8), bar);
+  const ta = seg(t, 12.4, 12.8);
+  if (ta > 0) {
+    c.fillStyle = `rgba(7,10,32,${ta * 0.55})`; c.fillRect(0, 0, VIEW.w, VIEW.h);
+    bigTitle(c, 'Lấy lại 5 trang sách phép!', t > 13 ? 'Trước tiên: học vẽ bùa nhé!' : '', ta, ease(seg(t, 12.7, 13.3)));
+  }
   if (t > DURATION - 0.4) { c.fillStyle = `rgba(7,10,32,${seg(t, DURATION - 0.4, DURATION)})`; c.fillRect(0, 0, VIEW.w, VIEW.h); }
 }

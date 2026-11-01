@@ -11,7 +11,7 @@
 //   6.05+          khung hình lúc trúng được đóng băng, trắng tan dần -> tối dần; 7.85 hiện bảng chiến thắng
 // Đổi âm thanh khác: chỉnh các mốc trong T bên dưới cho khớp.
 import { CX, GY } from '../core/config.js';
-import { drawSprite } from './draw.js';
+import { drawSprite, blitSprite } from './draw.js';
 import { VIEW, edges } from './view.js';
 
 /** Mốc thời gian (giây) — khớp với ult.mp3. */
@@ -62,18 +62,25 @@ function thunderShake(t) {
   return k;
 }
 
-/** Boss: ĐÓNG BĂNG (1 khung hình cố định) cho tới khi trúng tia thì rung + ửng trắng. */
+/** Vua Mực: ĐÓNG BĂNG (1 khung hình cố định) cho tới khi trúng tia thì rung + ửng trắng. */
 function boss(c, A, o, t) {
-  const s = A.sprites.boss;
-  if (!s?.img) return;
   const hit = t > T.hit - 0.3 ? Math.min(1, (t - T.hit + 0.3) * 3) : 0;   // sắp trúng: rung + ửng trắng
   const jx = hit ? Math.sin(t * 90) * 7 * hit : 0, jy = hit ? Math.cos(t * 70) * 5 * hit : 0;
-  const f = hit ? ((t * 14) | 0) % s.n : 2, sc = 2.4, w = s.w * sc, h = s.h * sc;
   const x = o.bx + jx, y = o.by + jy;
-  c.drawImage(s.img, f * s.w, 0, s.w, s.h, x - w / 2, y - h / 2, w, h);
+  const king = A.sprites.king_laugh?.img ? (hit ? 'king_hit' : 'king_laugh') : null;
+  const paint = () => {
+    if (king) blitSprite(c, A, king, hit ? ((t * 14) | 0) % 2 : 1, x, y, 1, false, 'c');
+    else {   // chưa tải sprite Vua Mực: boss cũ
+      const s = A.sprites.boss;
+      if (!s?.img) return;
+      const f = hit ? ((t * 14) | 0) % s.n : 2, sc = 2.4, w = s.w * sc, h = s.h * sc;
+      c.drawImage(s.img, f * s.w, 0, s.w, s.h, x - w / 2, y - h / 2, w, h);
+    }
+  };
+  paint();
   if (hit) {
     c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.6 * hit;
-    c.drawImage(s.img, f * s.w, 0, s.w, s.h, x - w / 2, y - h / 2, w, h);
+    paint();
     c.restore();
   }
 }

@@ -8,8 +8,8 @@
 // - iPhone gạt công tắc im lặng thì SFX tắt (hành vi của iOS), nhạc nền vẫn kêu.
 
 const AC = window.AudioContext || /** @type {any} */ (window).webkitAudioContext;
-const GAIN = { 3: 0.7, 4: 0.6, 5: 1, ult: 1 };   // cân bằng theo đo thực tế (5.mp3 nhỏ hơn ~4dB)
-const SFX = ['3', '4', '5', 'ult'];   // ult: tiếng đòn kết liễu boss (7.9 giây, ~80KB)
+const GAIN = { 3: 0.7, 4: 0.6, 5: 1, ult: 1, laugh: 0.8 };   // cân bằng theo đo thực tế (5.mp3 nhỏ hơn ~4dB)
+const SFX = ['3', '4', '5', 'ult', 'laugh'];   // ult: tiếng đòn kết liễu boss (7.9 giây, ~80KB) · laugh: Ma trùm cười (phim mở đầu)
 
 export const audio = {
   /** @type {AudioContext|null} */ ctx: null,
@@ -28,6 +28,8 @@ export const audio = {
 
   /** PHẢI gọi trực tiếp trong sự kiện click/chạm. Gọi nhiều lần vô hại. */
   unlock() {
+    // iOS 17+: coi web như trình phát nhạc -> vẫn kêu khi gạt công tắc im lặng
+    try { const s = /** @type {any} */ (navigator).audioSession; if (s && s.type !== 'playback') s.type = 'playback'; } catch { /* máy cũ */ }
     if (!this.ctx && AC) {
       this.ctx = new AC();
       const s = this.ctx.createBufferSource();   // phát 1 mẫu rỗng: mẹo mở khóa iOS cũ

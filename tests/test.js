@@ -84,18 +84,18 @@ test('ma tim xuất hiện khi thiếu máu, không gây sát thương, vẽ ♥
   run(s, 3); assert.equal(s.hp, 3);
   assert.ok(s.cast('HEART')); assert.equal(s.hp, 4);
 });
-test('bùa trúng con ma gần nhất cần đúng bùa đó', () => {
+test('bùa trúng cả 2 con cùng ký hiệu, dù ở xa nhau', () => {
   const s = new Sim(1, 1);
   s.ghosts = [
     { id: 1, x: 900, y: 100, vx: 0, vy: 0, sp: 0, seq: ['VERTICAL'], i: 0, sz: 1, boss: false, heal: false, ph: 1 },
     { id: 2, x: 600, y: 300, vx: 0, vy: 0, sp: 0, seq: ['VERTICAL'], i: 0, sz: 1, boss: false, heal: false, ph: 1 },
   ];
   s.cast('VERTICAL');
-  assert.deepEqual(s.ghosts.map((g) => g.id), [1]);
+  assert.deepEqual(s.ghosts.map((g) => g.id), []);
   assert.equal(s.cast('HORIZONTAL'), false);
 });
 test('sét: mọi ma mất 1 bùa, phá ký tự rơi, có hồi chiêu', () => {
-  const s = new Sim(5, 1); run(s, 1.1);
+  const s = new Sim(5, 2); run(s, 1.1);
   s.syms.push({ x: 480, y: 100, vy: 0, ch: '🎃' });
   const before = s.ghosts.map((g) => g.seq.length - g.i);
   assert.ok(s.cast('LIGHTNING'));
@@ -126,8 +126,8 @@ test('boss lướt vào từ mép phải rồi mới tiến về nhân vật', (
 });
 test('boss thả ký tự rơi, chạm để phá', () => {
   const s = new Sim(5, LAST);
-  s.waves = [{ n: 1, m: 3, v: 0.01, s: 3, t: 0, boss: true }];
-  run(s, BAL.symEvery + 0.2);
+  s.waves = [{ n: 1, m: 3, v: 0.01, s: 3, t: 0, boss: true }]; s.pals = [];
+  run(s, BAL.symEvery + 1.5);   // boss lướt vào xong mới bắt đầu ném
   assert.ok(s.syms.length >= 1);
   const y = s.syms[0];
   assert.equal(s.pop(y.x, y.y), 1);
@@ -137,48 +137,31 @@ test('cùng seed -> cùng diễn biến (cần cho online/replay)', () => {
   assert.deepEqual(a.ghosts.map((g) => [g.x, g.y, g.seq]), b.ghosts.map((g) => [g.x, g.y, g.seq]));
 });
 
-console.log('Bùa quét nhiều ma');
+console.log('Bùa trúng mọi ma cùng ký hiệu');
 const ghost = (id, x, y, s, extra = {}) => ({ id, x, y, vx: 0, vy: 0, sp: 0, seq: Array.isArray(s) ? s : [s], i: 0, sz: 1, boss: false, heal: false, ph: 1, ...extra });
 const geoOf = (pts) => strokeGeometry(pts);
-test('ngang: trúng cả hàng, bỏ qua ma khác hàng / khác bùa', () => {
+test('vẽ 1 ký hiệu -> MỌI ma có ký hiệu đó đều trúng, ở đâu trên màn cũng vậy', () => {
   const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 150, 200, 'HORIZONTAL'), ghost(2, 480, 210, 'HORIZONTAL'), ghost(3, 820, 190, 'HORIZONTAL'),
-    ghost(4, 480, 360, 'HORIZONTAL'), ghost(5, 300, 200, 'VERTICAL')];
-  assert.ok(s.cast('HORIZONTAL', geoOf(line([400, 205], [600, 205]))));
-  assert.deepEqual(s.ghosts.map((g) => g.id).sort(), [4, 5]);
+  s.ghosts = [ghost(1, 150, 200, 'HAT_DOWN'), ghost(2, 480, 60, 'HAT_DOWN'), ghost(3, 820, 330, 'HAT_DOWN'), ghost(4, 300, 200, 'VERTICAL')];
+  assert.ok(s.cast('HAT_DOWN', geoOf(path([600, 450], [650, 500], [700, 450]))));   // vẽ ở góc dưới, xa hết các con
+  assert.deepEqual(s.ghosts.map((g) => g.id), [4], 'ma khác ký hiệu không bị ảnh hưởng');
   assert.equal(s.kills, 3);
   assert.ok(s.ev.some((e) => e.k === 'combo' && e.n === 3));
+  assert.equal(s.ev.find((e) => e.k === 'cast').targets.length, 3);
 });
-test('dọc: trúng cả cột', () => {
+test('ma nhiều ký hiệu chỉ mất ký hiệu đầu; ma chỉ còn ký hiệu đó thì bị diệt', () => {
   const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 300, 80, 'VERTICAL'), ghost(2, 310, 260, 'VERTICAL'), ghost(3, 700, 200, 'VERTICAL')];
-  s.cast('VERTICAL', geoOf(line([305, 150], [305, 300])));
-  assert.deepEqual(s.ghosts.map((g) => g.id), [3]);
+  s.ghosts = [ghost(1, 200, 200, ['HORIZONTAL', 'VERTICAL']), ghost(2, 600, 200, 'HORIZONTAL'), ghost(3, 400, 100, ['VERTICAL', 'HORIZONTAL'])];
+  s.cast('HORIZONTAL');
+  assert.deepEqual(s.ghosts.map((g) => [g.id, g.i]), [[1, 1], [3, 0]], 'con 3 đang chờ │ nên không mất ─');
+  s.cast('VERTICAL');
+  assert.deepEqual(s.ghosts.map((g) => [g.id, g.i]), [[3, 1]], 'con 1 hết ký hiệu -> bị diệt; con 3 mất │');
 });
-test('chéo: trúng ma dọc theo đường chéo kéo dài', () => {
+test('vẽ ký hiệu không con nào cần -> trượt', () => {
   const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 200, 400, 'DIAGONAL'), ghost(2, 500, 100, 'DIAGONAL'), ghost(3, 200, 100, 'DIAGONAL')];
-  s.cast('DIAGONAL', geoOf(line([300, 300], [400, 200])));   // đường y = 600 - x
-  assert.deepEqual(s.ghosts.map((g) => g.id), [3]);
-});
-test('V: trúng ma trong khung chữ V', () => {
-  const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 300, 200, 'HAT_UP'), ghost(2, 380, 260, 'HAT_UP'), ghost(3, 800, 200, 'HAT_UP')];
-  s.cast('HAT_UP', geoOf(path([250, 300], [330, 150], [420, 300])));
-  assert.deepEqual(s.ghosts.map((g) => g.id), [3]);
-});
-test('ma nhiều bùa chỉ mất 1 bùa mỗi nét', () => {
-  const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 200, 200, ['HORIZONTAL', 'VERTICAL']), ghost(2, 600, 200, 'HORIZONTAL')];
-  s.cast('HORIZONTAL', geoOf(line([100, 200], [700, 200])));
-  assert.equal(s.ghosts.length, 1); assert.equal(s.ghosts[0].i, 1);
-});
-test('vẽ chỗ không có ma -> vẫn đánh con gần nhân vật nhất', () => {
-  const s = new Sim(1, 1);
-  s.ghosts = [ghost(1, 900, 100, 'HORIZONTAL'), ghost(2, 600, 300, 'HORIZONTAL')];
-  s.cast('HORIZONTAL', geoOf(line([100, 500], [300, 500])));
-  assert.deepEqual(s.ghosts.map((g) => g.id), [1]);
-  assert.ok(s.ev.some((e) => e.k === 'area' && e.fb));
+  s.ghosts = [ghost(1, 900, 100, 'HORIZONTAL')];
+  assert.equal(s.cast('VERTICAL'), false);
+  assert.ok(s.ev.some((e) => e.k === 'miss'));
 });
 test('sét trúng cùng lúc boss (bùa cuối) và ma khác: boss vẫn được giữ cho đòn kết liễu', () => {
   const s = new Sim(5, LAST);
@@ -196,7 +179,7 @@ test('vòng tròn QUANH nhân vật = lá chắn; vòng ở chỗ khác vẫn l�
   assert.equal(recognize(ring(CX + 250, 180, 60), { around: [CX, CY] }), 'HEART');
 });
 test('lá chắn: hất ma ra, không cho cắn, phá đồ rơi; mỗi màn 1 lần', () => {
-  const s = new Sim(3, 1);
+  const s = new Sim(3, 3);
   s.waves = [];
   s.ghosts = [ghost(1, CX + 90, CY - 60, 'HORIZONTAL'), ghost(2, CX - 400, CY - 200, 'VERTICAL')];
   for (const g of s.ghosts) s.aim(g, 120);
@@ -210,16 +193,75 @@ test('lá chắn: hất ma ra, không cho cắn, phá đồ rơi; mỗi màn 1 l
   assert.equal(s.hp, hp, 'trong lúc chắn không mất máu');
   assert.ok(s.ev.some((e) => e.k === 'block'));
   assert.equal(s.cast('SHIELD'), false, 'lần 2 trong cùng màn không dùng được');
-  assert.equal(new Sim(3, 1).shieldUsed, false, 'màn mới được dùng lại');
+  assert.equal(new Sim(3, 3).shieldUsed, false, 'màn mới được dùng lại');
 });
 test('đồ boss rơi có báo trước: chưa rơi trong symWarn giây đầu', () => {
   const s = new Sim(2, LAST);
-  s.waves = []; s.ghosts = [{ ...ghost(9, CX, -70, 'HORIZONTAL'), boss: true, sz: 3 }];
+  s.waves = []; s.pals = []; s.ghosts = [{ ...ghost(9, CX, -70, 'HORIZONTAL'), boss: true, sz: 3 }];
   run(s, BAL.symEvery + 0.05);
   assert.equal(s.syms.length, 1);
   assert.equal(s.syms[0].y, -20, 'đang báo trước, chưa rơi');
   run(s, BAL.symWarn + 0.2);
   assert.ok(s.syms[0].y > -20, 'hết báo trước thì rơi');
+});
+
+console.log('Cốt truyện: bùa mở khóa, ma mới, bạn đồng hành');
+test('bùa chưa mở khóa: màn 1 chưa có sét, màn 2 chưa có lá chắn, màn 3 chưa có đồng hồ cát', () => {
+  const a = new Sim(1, 1); a.ghosts = [ghost(1, 300, 200, 'HORIZONTAL')];
+  assert.equal(a.cast('LIGHTNING'), false); assert.ok(a.ev.some((e) => e.k === 'locked'));
+  assert.equal(new Sim(1, 2).cast('SHIELD'), false);
+  assert.equal(new Sim(1, 3).cast('HOURGLASS'), false);
+  assert.equal(new Sim(1, 4).cast('HOURGLASS'), true);
+});
+test('đồng hồ cát: nét tự cắt chéo qua giữa (⧗ / số 8) -> ma chậm lại, 1 lần mỗi màn', () => {
+  assert.equal(recognize(path([330, 170], [470, 170], [330, 330], [470, 330], [330, 170])), 'HOURGLASS');
+  const eight = Array.from({ length: 60 }, (_, i) => { const t = (i / 59) * 6.283; return [400 + 60 * Math.sin(2 * t), 250 - 100 * Math.cos(t)]; });
+  assert.equal(recognize(eight, { touch: true }), 'HOURGLASS');
+  const s = new Sim(1, 4); s.waves = [];
+  s.ghosts = [ghost(1, CX - 400, CY - 200, 'VERTICAL')]; s.aim(s.ghosts[0], 100);
+  const x0 = s.ghosts[0].x; run(s, 1); const fast = s.ghosts[0].x - x0;
+  assert.ok(s.cast('HOURGLASS'));
+  const x1 = s.ghosts[0].x; run(s, 1); const slow = s.ghosts[0].x - x1;
+  assert.ok(slow < fast * 0.5, `chậm lại (${slow.toFixed(1)} < ${fast.toFixed(1)})`);
+  assert.equal(s.cast('HOURGLASS'), false);
+});
+test('ma khiên: ký hiệu đầu là ⚡, ký hiệu thường không ăn cho tới khi phá khiên', () => {
+  const s = new Sim(1, 4); s.waves = [];
+  s.ghosts = [ghost(1, 300, 200, ['LIGHTNING', 'HORIZONTAL'], { kind: 'knight' })];
+  assert.equal(s.cast('HORIZONTAL'), false);
+  assert.ok(s.cast('LIGHTNING')); assert.ok(s.ghosts[0].brk != null);
+  assert.ok(s.cast('HORIZONTAL')); assert.equal(s.ghosts.length, 0);
+});
+test('đàn ma con: cả đàn chung 1 chuỗi ký hiệu -> 1 nét diệt cả đàn', () => {
+  const s = new Sim(9, 2);
+  s.waves = [{ n: 7, m: 1, v: 1, s: 0.6, t: 0, boss: false, kind: 'swarm' }]; s.pals = [];
+  run(s, 0.1);
+  assert.equal(new Set(s.ghosts.map((g) => g.seq.join())).size, 1);
+  s.cast(s.ghosts[0].seq[0]); assert.equal(s.ghosts.length, 0);
+});
+test('boss màn 1–4 gục -> qua màn (không đòn kết liễu); chỉ Vua Mực màn cuối mới có', () => {
+  const s = new Sim(5, 1); s.waves = [];
+  s.ghosts = [{ ...ghost(1, 600, 200, 'HORIZONTAL'), boss: true, ph: 2, kind: 'book' }];
+  s.cast('HORIZONTAL'); run(s, 0.1);
+  assert.equal(s.finale, null); assert.ok(s.cleared);
+});
+test('bạn đồng hành: chạm để gọi, có hồi chiêu — Mun xóa ký hiệu, Ộp nuốt ma, Bin đẩy lùi', () => {
+  const s = new Sim(3, 4); s.waves = [];
+  assert.deepEqual(s.pals.map((p) => p.who), ['mun', 'frog', 'bat']);
+  s.ghosts = [ghost(1, CX - 250, CY - 120, ['VERTICAL', 'HAT_UP']), ghost(2, CX + 300, CY - 200, ['HORIZONTAL', 'DIAGONAL'])];
+  assert.equal(s.usePal('mun'), false, 'đầu màn chưa hồi xong');
+  run(s, 2.1);
+  assert.ok(s.usePal('mun')); assert.equal(s.ghosts[0].i, 1, 'Mun xóa 1 ký hiệu của con gần nhất');
+  assert.equal(s.usePal('mun'), false, 'vừa dùng -> phải chờ');
+  assert.ok(s.usePal('frog')); assert.equal(s.ghosts.length, 1, 'Ộp nuốt trọn 1 con');
+  const d0 = Math.hypot(s.ghosts[0].x - CX, s.ghosts[0].y - CY);
+  assert.ok(s.usePal('bat')); assert.ok(Math.hypot(s.ghosts[0].x - CX, s.ghosts[0].y - CY) > d0 + 50, 'Bin đẩy lùi');
+  assert.ok(!s.ev.some((e) => e.k === 'pal' && false));
+});
+test('bạn đồng hành không tự ra tay', () => {
+  const s = new Sim(3, 4); s.waves = []; s.ghosts = [ghost(1, CX - 300, CY - 150, ['VERTICAL'])];
+  for (let i = 0; i < 60 * 20; i++) s.tick(1 / 60);
+  assert.ok(!s.ev.some((e) => e.k === 'pal'));
 });
 
 console.log('Màn tập');
@@ -245,6 +287,23 @@ console.log('Màn tập');
   assert.ok(tut.done, `kẹt ở bước ${tut.i + 1}/${STEPS.length}`);
   assert.equal(sim.hp, BAL.hp, 'bước tim phải hồi đủ máu');
   passed++; console.log(`  ✓ làm theo bàn tay mẫu -> học xong cả ${STEPS.length} bước; ma không cắn, không tự qua màn`);
+  // bài học bùa mới của Cô Cú đầu màn 2, 3, 4
+  const { LESSONS } = await import('../web/src/game/tutorial.js');
+  for (const l of Object.keys(LESSONS).map(Number)) {
+    const sim2 = new Sim(7, 0, BAL.hp, 0, l), t2 = new Tutorial(sim2, /** @type {any} */ (fx), LESSONS[l]);
+    let g2 = 0;
+    while (!t2.done && g2++ < 3000) {
+      for (let k = 0; k < 30; k++) { sim2.tick(1 / 60); t2.observe(sim2.ev); sim2.ev.length = 0; t2.update(1 / 60, false); }
+      const d = t2.demo();
+      if (!d?.path) continue;
+      const pts = dense(d.path), s = recognize(pts, { around: [CX, CY] });
+      assert.ok(s, `bài màn ${l}, bước ${t2.i + 1}: nét mẫu phải nhận ra được`);
+      sim2.cast(s, strokeGeometry(pts));
+      t2.tried();
+    }
+    assert.ok(t2.done, `bài màn ${l} kẹt ở bước ${t2.i + 1}`);
+  }
+  passed++; console.log(`  ✓ bài học bùa mới màn ${Object.keys(LESSONS).join(', ')} làm theo mẫu được`);
 }
 
 console.log(`\n${passed} test đạt`);

@@ -4,17 +4,20 @@
 //   cutscene (phim mở đầu) ──> tutorial (màn tập) ──> intro màn 1     [lần đầu chơi, bỏ qua được]
 //   intro ──(chạy vào giữa)──> play ──┬─ qua màn ──> clear ──(chạm)──> intro màn sau
 //                                     ├─ hết máu ──> over  ──(chạm)──> intro màn đó
-//                                     └─ hạ boss ──> outro (phép tối thượng) ──> bảng chiến thắng ──> còn tiếp… ──> menu
-import { CX, GY, CY, BAL, LEVELS, LAST, SPELL_ANIM, DEFAULT_CAST_ANIM, SPELL_COLOR } from '../core/config.js';
+//                                     ├─ hạ boss màn 1–4 ──> page (nhặt trang sách, học bùa mới) ──> [bài học của Cô Cú] ──> intro màn sau
+//                                     └─ hạ Vua Mực ──> outro (phép tối thượng) ──> ending (Mực Con) ──> bảng chiến thắng ──> tbc (còn tiếp…) ──> menu
+import { CX, GY, CY, BAL, LEVELS, LAST, SPELL_ANIM, DEFAULT_CAST_ANIM, palsAt } from '../core/config.js';
 import { Sim } from '../core/sim.js';
 import { recognize, strokeGeometry } from '../core/recognizer.js';
 import { Effects } from './effects.js';
 import { audio } from '../engine/audio.js';
 import { bolt } from '../render/ink.js';
-import { areaFx } from '../render/sigil.js';
 import { CUES, DURATION } from '../render/cutscene.js';
 import { OUTRO_CUES, OUTRO_FIRE, OUTRO_HIT, OUTRO_DUR, TIMESTOP_END } from '../render/outro.js';
-import { Tutorial } from './tutorial.js';
+import { Tutorial, LESSONS } from './tutorial.js';
+import { PAGE_INFO, ENDING_DUR, ENDING_CUES, TBC_DUR } from '../render/story.js';
+import { palIcon, PAL_NAME } from '../render/draw.js';
+import { VIEW } from '../render/view.js';
 
 const SIGIL_Y = GY - 190;   // trận pháp nổi trên đầu nhân vật
 const SIGIL_RATE = 1.25;    // ~0.8 giây
@@ -35,13 +38,23 @@ export const tutorialSeen = {
   set() { try { localStorage.setItem('dd-tut', '1'); } catch { /* bỏ qua */ } },
 };
 
+/** Bài học bùa mới của từng màn đã xem chưa (xem rồi thì lần sau vào thẳng). */
+export const lessonSeen = {
+  get(l) { try { return localStorage.getItem('dd-les' + l) === '1'; } catch { return false; } },
+  set(l) { try { localStorage.setItem('dd-les' + l, '1'); } catch { /* bỏ qua */ } },
+};
+
 /** Âm thanh cho các mốc trong phim mở đầu (render/cutscene.js -> CUES). */
 const CUE_SOUND = {
   thunder: () => audio.sfx('4', 0.8, 0.5),
   whoosh: () => audio.sfx('3', 0.35, 0.55),
   grab: () => audio.sfx('5', 1, 0.8),
-  laugh: () => audio.arp([2, 1.68, 2, 1.68], 0.35),
+  laugh: () => (audio.has('laugh') ? audio.sfx('laugh', 0.9) : audio.arp([2, 1.68, 2, 1.68], 0.35)),   // tiếng cười của Ma trùm
   angry: () => audio.sfx('4', 0.5, 1.3),
+  rip: () => { audio.sfx('5', 1, 1.25); audio.sfx('4', 0.6, 0.8); },
+  shrink: () => { audio.sfx('3', 0.5, 0.6); audio.sfx('3', 0.4, 0.45, 0.8); },
+  cheer: () => audio.arp([1.5, 2], 0.45),
+  restore: () => audio.arp([1, 1.26, 1.5, 2, 2.5], 0.5),
   title: () => audio.arp([1, 1.26, 1.5, 2]),
   // đoạn kết: cả đoạn ult.mp3 (khớp nhịp hình, xem render/outro.js). Chưa tải xong -> ghép tạm từ tiếng có sẵn.
   ult: () => {
@@ -84,6 +97,16 @@ export class Session {
     this.tutEnd = 0;   // đếm ngược từ lúc học xong tới màn 1
     /** @type {{t:number, bx:number, by:number, dir:number, cue:number, hit:boolean, shown:boolean, stop:boolean}|null} */
     this.outro = null; // đoạn kết sau khi hạ boss cuối
+    /** @type {{t:number, level:number, bx:number, by:number, pals:string[], bg:boolean, hp:number, score:number}|null} */
+    this.page = null;  // đoạn nhặt trang sách sau boss màn 1–4
+    /** @type {{t:number, bx:number, by:number, pals:string[], cue:number, shown:boolean}|null} */
+    this.ending = null;
+    this.tbcT = -1;    // >= 0: đang chiếu "Còn tiếp…"
+    this.lesson = 0;   // > 0: đang học bùa mới của màn này
+    this.pending = { hp: BAL.hp, score: 0 };   // máu/điểm mang sang màn sau bài học
+    /** @type {Record<string, {a:string, t0:number}>} */ this.pals = {};
+    this.lastBoss = { x: CX + 200, y: 180 };
+    this.fade = 0;     // > 0: màn hình đang tối, sáng dần (chuyển cảnh)
   }
 
   /** Hạ boss cuối: diễn "phép tối thượng" (render/outro.js) thay cho animation thắng thường. */
@@ -101,6 +124,7 @@ export class Session {
   /** Phim mở đầu -> màn tập -> màn 1. */
   startStory() {
     this.sim = null;
+    this.page = null; this.ending = null; this.tbcT = -1; this.lesson = 0;
     this.hooks.onTimeStop(false);
     this.tut = null;
     this.fx.reset();
@@ -112,6 +136,7 @@ export class Session {
   }
 
   startTutorial() {
+    this.lesson = 0;
     this.sim = new Sim(7, 0);
     this.fx.reset();
     this.tut = new Tutorial(this.sim, this.fx);
@@ -127,15 +152,44 @@ export class Session {
   skip() {
     if (this.state === 'cutscene') this.startTutorial();
     else if (this.state === 'tutorial') this.endTutorial();
+    else if (this.state === 'page') this.skipPage();
+    else if (this.state === 'ending' && this.ending) this.ending.t = Math.max(this.ending.t, ENDING_DUR);
   }
 
   endTutorial() {
-    tutorialSeen.set();
     this.tut = null;
+    if (this.lesson) { const l = this.lesson; lessonSeen.set(l); this.lesson = 0; this.beginLevel(l, this.pending.hp, this.pending.score); return; }
+    tutorialSeen.set();
     this.begin(1);
   }
 
+  /** Vào màn: lần đầu tới màn có bùa mới -> Cô Cú dạy trước (bài học ngắn, bỏ qua được). */
   begin(level, hp = BAL.hp, score = 0) {
+    if (LESSONS[level] && !lessonSeen.get(level)) { this.startLesson(level, hp, score); return; }
+    this.beginLevel(level, hp, score);
+  }
+
+  /** Bài học bùa mới đầu màn (dùng chung cỗ máy của màn tập). */
+  startLesson(level, hp, score) {
+    this.page = null; this.outro = null;
+    this.pending = { hp, score };
+    this.lesson = level;
+    this.sim = new Sim(7, 0, BAL.hp, score, level);
+    this.fx.reset();
+    this.tut = new Tutorial(this.sim, this.fx, LESSONS[level]);
+    this.msg = null; this.tutEnd = 0;
+    this.state = 'tutorial';
+    this.fade = 1;
+    this.dog = { state: 'idle', t0: this.clock, timer: 0, x: CX, flip: false };
+    this.hooks.onTimeStop(false);
+    this.hooks.onBackground(LEVELS[level].bg);
+    this.hooks.onSkippable(true);
+  }
+
+  beginLevel(level, hp = BAL.hp, score = 0) {
+    this.page = null; this.ending = null; this.tbcT = -1; this.lesson = 0;
+    this.pals = {};
+    for (const who of palsAt(level)) this.pals[who] = { a: '', t0: 0 };
     this.outro = null;
     this.hooks.onTimeStop(false);
     this.hooks.onSkippable(false);
@@ -147,6 +201,7 @@ export class Session {
     this.fx.reset();
     this.msg = null;
     this.state = 'intro';
+    this.fade = level > 1 || this.fade > 0 ? 1 : 0;   // sau đoạn chuyển màn / bài học: sáng dần rồi Cún chạy vào
     this.introT = BAL.introSec;
     this.overlayT = 0;
     this.dog = { state: 'run', t0: this.clock, timer: 0, x: -120, flip: false };
@@ -173,6 +228,11 @@ export class Session {
     this.tut?.tried();
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    if (len < TAP_LEN && this.state === 'play') {   // chạm biểu tượng bạn đồng hành (góc dưới trái)
+      const vx = pts[0][0] + VIEW.ox, vy = pts[0][1] + VIEW.oy;
+      const i = sim.pals.findIndex((_, j) => { const b = palIcon(j); return Math.hypot(vx - b.x, vy - b.y) < b.r + 10; });
+      if (i >= 0) { sim.usePal(sim.pals[i].who); return; }
+    }
     if (len < TAP_LEN) {   // chạm = phá ký tự rơi
       if (sim.pop(pts[0][0], pts[0][1])) audio.sfx('3', 0.5, 1.8);
       return;
@@ -193,6 +253,9 @@ export class Session {
 
   /** Chạm vào bảng kết quả. */
   tap() {
+    if (this.state === 'page' && this.page && this.page.t > 1.2) { this.skipPage(); return; }
+    if (this.state === 'ending' && this.ending && this.ending.t > 2) { this.ending.t = Math.max(this.ending.t, ENDING_DUR); return; }
+    if (this.state === 'tbc' && this.tbcT > 1.5) { this.hooks.onMenu(); return; }
     const sim = this.sim;
     if (!sim || this.overlayT < OVERLAY_WAIT) return;
     if (this.state === 'clear') this.begin(sim.level + 1, Math.min(BAL.hp, sim.hp + 1), sim.score);
@@ -206,9 +269,9 @@ export class Session {
     for (const e of sim.ev.splice(0)) {
       switch (e.k) {
         case 'wave':
-          fx.toast(e.boss ? '⚠ BOSS xuất hiện!' : `Đợt ma ${e.n}/${e.of}!`, e.boss ? 'boss' : 'warn');
+          fx.toast(e.boss ? `⚠ ${sim.cfg.boss?.name || 'BOSS'} xuất hiện!` : `Đợt ma ${e.n}/${e.of}!`, e.boss ? 'boss' : 'warn');
           this.alertT = 1.4;
-          if (e.boss) { fx.shake = 0.5; audio.sfx('4', 0.5, 0.6); }
+          if (e.boss) { fx.shake = 0.5; audio.sfx('4', 0.5, 0.6); if (sim.cfg.boss?.king) CUE_SOUND.laugh(); }
           break;
         case 'healspawn':
           if (!this.tut) fx.toast('Ma trái tim xuất hiện — vẽ ♥ để hồi máu', 'info', 3);
@@ -219,6 +282,8 @@ export class Session {
           break;
         case 'kill': {
           fx.burst(e.x, e.y, e.boss ? 40 : 14, ['#1b1bb8', '#fff', '#9be7ff']);
+          fx.add({ t: 'poof', x: e.x, y: e.y, sc: e.boss ? 1.7 : 0.75, A: this.A, rate: 2.6 });
+          if (e.boss) { this.lastBoss = { x: e.x, y: e.y }; fx.toast(`Hạ ${sim.cfg.boss?.name || 'boss'}! Nó làm rơi một trang sách…`, 'level', 2.4); }
           fx.burst(e.x, e.y - 20, 1, ['#fff'], '+' + e.pts, 24);
           audio.sfx('3', 0.5, 1.4);
           if (e.s === 'LIGHTNING') fx.add({ t: 'bolt', p: bolt(e.x + 60, -10, e.x, e.y) });
@@ -232,9 +297,7 @@ export class Session {
           fx.toast('+1 máu!', 'info', 1.4);
           audio.arp([1.5, 2]);
           break;
-        case 'area':   // tia quét / vùng nổ đúng theo nét vẽ (bỏ qua khi chỉ đánh con gần nhất)
-          if (!e.fb) fx.add({ ...areaFx(e.s, e.geo, SPELL_COLOR[e.s], fxId++), rate: 2 });
-          break;
+        // 'cast' (bùa trúng những con nào): không vẽ tia nối — mỗi con trúng tự nổ tung tại chỗ qua 'kill' / 'step'
         case 'combo':
           fx.toast(`Combo x${e.n}! +${BAL.comboBonus * (e.n - 1)}`, 'info', 1.3);
           audio.arp([1.26, 1.5, 2].slice(0, Math.min(3, e.n)), 0.5);
@@ -243,6 +306,7 @@ export class Session {
         case 'miss':
           if (e.cd) fx.toast('Sét đang hồi…', 'warn', 1);
           else if (e.shield) fx.toast('Lá chắn đã dùng ở màn này rồi', 'warn', 1.4);
+          else if (e.slow) fx.toast('Đồng hồ cát đã dùng ở màn này rồi', 'warn', 1.4);
           else if (this.tut) fx.toast('Chưa đúng bùa — vẽ theo bàn tay nhé', 'warn', 1.4);
           break;
         case 'shield':
@@ -256,12 +320,55 @@ export class Session {
           audio.sfx('3', 0.35, 0.7);
           break;
         case 'phase': fx.toast('Boss nổi giận!', 'boss'); fx.shake = 0.5; audio.sfx('4', 0.5, 0.5); break;
-        case 'finale': this.startOutro(e.x, e.y); break;   // hết bùa pha cuối -> đòn kết liễu
+        case 'finale': this.startOutro(e.x, e.y); break;
         case 'pop': fx.burst(e.x, e.y, 8, ['#fff', '#ffd23f']); break;
         case 'hit':
           fx.shake = 0.35; fx.red = 0.35;
           this.anim('hit', this.clip('hit'));
           audio.sfx('5', 1);
+          this.palAnim({ mun: 'mun_scared', frog: 'frog_hit', bat: 'bat_hit' });
+          break;
+        case 'locked': {
+          const name = { LIGHTNING: 'Sét', SHIELD: 'Lá chắn', HOURGLASS: 'Đồng hồ cát' }[e.s] || 'này';
+          fx.toast(`Chưa có bùa ${name} — phải lấy lại trang sách đã!`, 'warn', 1.8);
+          break;
+        }
+        case 'slow':
+          fx.toast(`Đồng hồ cát! Ma chậm lại ${BAL.slowSec} giây`, 'info', 1.6);
+          fx.flash = 0.12; audio.sfx('4', 0.4, 0.4); audio.arp([2, 1.5, 1.26], 0.35);
+          break;
+        case 'armor':
+          fx.burst(e.x, e.y, 14, ['#c8c8d8', '#fff', '#1b1bb8']);
+          fx.add({ t: 'poof', x: e.x, y: e.y, sc: 0.6, A: this.A, rate: 3 });
+          audio.sfx('5', 0.7, 1.5);
+          break;
+        case 'throw': audio.sfx('3', 0.25, 0.5); break;
+        case 'dark':
+          fx.toast('Vua Mực tắt đèn! Cứ vẽ tiếp đi!', 'boss', 1.6);
+          audio.sfx('4', 0.6, 0.45);
+          break;
+        case 'pal': {
+          const ic = palIcon(sim.pals.findIndex((p) => p.who === e.who));
+          const ix = ic.x - VIEW.ox, iy = ic.y - VIEW.oy;   // biểu tượng -> tọa độ thế giới
+          if (e.who === 'mun') {   // Mun nhảy ra từ biểu tượng, phóng sao
+            fx.add({ t: 'cameo', name: 'mun_cast', x: ix + 50, y: iy - 60, A: this.A, rate: 1.4 });
+            fx.add({ t: 'star', x0: ix + 80, y0: iy - 80, x1: e.x, y1: e.y, rate: 2.6 });
+            audio.sfx('3', 0.45, 2.2);
+          }
+          if (e.who === 'frog') {   // Ộp hiện ra cạnh con ma, lè lưỡi nuốt
+            const side = e.x > CX ? 1 : -1;
+            fx.add({ t: 'cameo', name: 'frog_tongue', x: e.x - side * 95, y: e.y + 30, flip: side < 0, A: this.A, rate: 1.5 });
+            audio.sfx('3', 0.5, 0.7);
+          }
+          if (e.who === 'bat') {   // Bin bay vụt qua trên đầu Cún, hét
+            fx.add({ t: 'cameo', name: 'bat_screech', x: CX, y: GY - 220, A: this.A, rate: 1.3 });
+            fx.add({ t: 'sonic', x: CX, y: GY - 200, rate: 1.6 });
+            audio.sfx('3', 0.4, 2.6); audio.sfx('3', 0.3, 2.9, 0.1);
+          }
+          break;
+        }
+        case 'palwait':
+          fx.toast(e.none ? `${PAL_NAME[e.who]}: chưa có ma để giúp` : `${PAL_NAME[e.who]} đang nghỉ… ${Math.ceil(e.cd)} giây`, 'warn', 1.2);
           break;
       }
     }
@@ -269,15 +376,30 @@ export class Session {
 
   update(dt) {
     this.clock += dt;
+    this.fade = Math.max(0, this.fade - dt / 0.6);
     if (this.state === 'outro' && this.outro) {   // đoạn kết: đếm giờ, âm thanh theo mốc, nổ -> thắng -> bảng chiến thắng
       const o = this.outro;
       o.t += dt;
       while (o.cue < OUTRO_CUES.length && OUTRO_CUES[o.cue][0] <= o.t) CUE_SOUND[OUTRO_CUES[o.cue++][1]]?.();
       if (o.stop && o.t >= TIMESTOP_END) { o.stop = false; this.hooks.onTimeStop(false); }
       if (!o.hit && o.t >= OUTRO_HIT) { o.hit = true; this.sim?.finishBoss(); progress.set(LAST); }
-      if (!o.shown && o.t >= OUTRO_DUR) { o.shown = true; this.hooks.onVictory(this.sim?.score ?? 0); }
+      if (!o.shown && o.t >= OUTRO_DUR) { o.shown = true; this.startEnding(o.bx, o.by); }
       return;
     }
+    if (this.state === 'page' && this.page) {
+      const p = this.page;
+      p.t += dt;
+      if (p.t >= PAGE_INFO[p.level].dur) this.afterPage();
+      return;
+    }
+    if (this.state === 'ending' && this.ending) {
+      const e = this.ending;
+      e.t += dt;
+      while (e.cue < ENDING_CUES.length && ENDING_CUES[e.cue][0] <= e.t) CUE_SOUND[ENDING_CUES[e.cue++][1]]?.();
+      if (!e.shown && e.t >= ENDING_DUR) { e.shown = true; this.hooks.onVictory(this.sim?.score ?? 0); }
+      return;
+    }
+    if (this.state === 'tbc') { if ((this.tbcT += dt) >= TBC_DUR + 3) this.hooks.onMenu(); return; }
     if (this.state === 'cutscene') {   // phim mở đầu: chỉ đếm giờ + phát âm thanh theo mốc
       this.cutT += dt;
       while (this.cueI < CUES.length && CUES[this.cueI][0] <= this.cutT) CUE_SOUND[CUES[this.cueI++][1]]?.();
@@ -307,7 +429,7 @@ export class Session {
       if (this.tut.done && !this.tutEnd) {
         this.tutEnd = 2;
         this.anim('win');
-        this.fx.toast('Sẵn sàng! Đi lấy lại sách phép thôi!', 'level', 2);
+        this.fx.toast(this.lesson ? `Đã học xong! Vào màn ${this.lesson} nào!` : 'Sẵn sàng! Đi lấy lại sách phép thôi!', 'level', 2);
         audio.arp([1, 1.26, 1.5, 2]);
       } else if (this.tutEnd && (this.tutEnd -= dt) <= 0) this.endTutorial();
       return;
@@ -320,8 +442,56 @@ export class Session {
     this.dogFace(dt);
 
     if (sim.over) this.finish('over', 'lose', 'Thua rồi…', `Điểm ${sim.score} · chạm để thử lại màn ${sim.level}`, () => audio.sfx('5', 0.8, 0.7));
-    else if (sim.cleared) this.finish('clear', 'win', `Hoàn thành màn ${sim.level}!`, 'Chạm để sang màn tiếp theo (+1 máu)', () => audio.arp([1, 1.26, 1.5, 2]));
+    else if (sim.cleared) this.startPage();
     else if (sim.won) this.finish('won', 'win', 'ĐÁNH BẠI BOSS! 🎉', `Điểm ${sim.score} · chạm để về menu`, () => audio.arp([1, 1.26, 1.5, 2, 1.5, 2, 2.5]));
+  }
+
+  /** Đổi động tác các bạn đồng hành đang có mặt. @param {Record<string,string>} m */
+  palAnim(m) { for (const who of Object.keys(m)) if (this.pals[who]) this.pals[who] = { a: m[who], t0: this.clock }; }
+
+  /** Hạ boss màn 1–4: đoạn nhặt trang sách / học bùa mới. */
+  startPage() {
+    const sim = /** @type {Sim} */ (this.sim);
+    progress.set(sim.level + 1);
+    this.state = 'page';
+    this.page = { t: 0, level: sim.level, bx: this.lastBoss.x, by: this.lastBoss.y, pals: palsAt(sim.level), bg: false,
+      hp: Math.min(BAL.hp, sim.hp + 1), score: sim.score };
+    this.trail.pts = []; this.trail.down = false;
+    this.fx.reset(); this.msg = null;
+    this.hooks.onSkippable(true);
+    audio.arp([1, 1.26, 1.5, 2]);
+  }
+
+  /** Bỏ qua đoạn chuyển màn: nhảy tới lúc màn hình tối dần (không cắt cụt). */
+  skipPage() {
+    const p = this.page;
+    if (!p) return;
+    const dur = PAGE_INFO[p.level].dur;
+    p.t = Math.max(p.t, dur - 0.5);
+  }
+
+  afterPage() {
+    const p = this.page;
+    if (!p) return;
+    this.page = null;
+    this.begin(p.level + 1, p.hp, p.score);
+  }
+
+  /** Sau phép tối thượng: Vua Mực teo thành Mực Con, làm bạn, sách lành lại. */
+  startEnding(bx, by) {
+    this.state = 'ending';
+    this.ending = { t: 0, bx, by, pals: palsAt(LAST), cue: 0, shown: false };
+    this.hooks.onTimeStop(false);
+    this.hooks.onSkippable(true);
+    audio.duck(false);
+  }
+
+  /** "Còn tiếp…" (gọi khi bấm Tiếp tục ở bảng chiến thắng). */
+  startTbc() {
+    this.state = 'tbc';
+    this.tbcT = 0;
+    this.hooks.onSkippable(false);
+    audio.arp([1.5, 1.26, 1], 0.4);
   }
 
   /** Quay mặt về con ma gần nhất + chọn animation nghỉ (đang vẽ -> wave · vừa có đợt ma -> alert · idle). */
@@ -349,8 +519,13 @@ export class Session {
   /** Dữ liệu cho lớp vẽ. */
   view() {
     const tut = this.tut;
+    const inPlay = this.state === 'play' || this.state === 'intro' || this.state === 'over';
     return {
       sim: this.sim, t: this.clock, trail: this.trail, dog: this.dog, fx: this.fx, msg: this.msg,
+      pals: inPlay ? Object.fromEntries(Object.entries(this.pals).map(([k, p]) => [k, { a: p.a || '-', t0: p.t0 }])) : null,
+      owl: tut && !tut.done ? { a: tut.wait > 0 ? 'owl_cheer' : tut.t < 2.6 ? 'owl_talk' : 'owl_idle', t0: 0 } : null,
+      spot: this.state === 'intro' ? Math.min(1, this.introT / (BAL.introSec * 0.5)) : 0,
+      fade: Math.max(this.fade, this.tutEnd > 0 && this.tutEnd < 0.6 && this.lesson ? 1 - this.tutEnd / 0.6 : 0),
       /** màn tập: băng lời dặn + bàn tay mẫu (thay cho dòng "Màn x · Đợt y") */
       guide: tut && !tut.done ? { say: tut.step.say, sub: `${tut.step.sub || ''}  ·  ${tut.count}`, a: tut.wait > 0 ? 0 : Math.min(1, tut.t * 3), demo: tut.demo() } : null,
     };

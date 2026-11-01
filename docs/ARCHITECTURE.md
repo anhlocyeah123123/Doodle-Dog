@@ -27,7 +27,7 @@ web/                       <- toàn bộ trang web (xuất bản thẳng lên Ne
    │  ├─ view.js           khung nhìn: canvas phủ kín màn hình, thế giới 960x540 ở giữa (bám đáy)
    │  ├─ draw.js           vẽ 1 khung hình từ trạng thái (không đổi trạng thái); HUD phóng to trên màn thấp
    │  ├─ ink.js            phong cách bút mực: nét vẽ, chữ, tim, bong bóng bùa
-   │  ├─ sigil.js          hiệu ứng niệm bùa (4 kiểu, SIGIL_STYLE) + tia quét theo nét vẽ
+   │  ├─ sigil.js          hiệu ứng niệm bùa (4 kiểu, SIGIL_STYLE) + tia nối từ bùa tới từng con ma trúng
    │  ├─ cutscene.js       phim mở đầu ~12.5s vẽ bằng canvas từ sprite có sẵn (kịch bản theo mốc giây, CUES = âm thanh)
    │  ├─ guide.js          bàn tay mực vẽ mẫu + băng lời dặn của màn tập
    │  ├─ outro.js          đoạn kết hạ boss, khớp nhịp assets/audio/ult.mp3: thời gian ngưng → lãnh địa sao → điểm sáng → bắn (sấm) → nổ
@@ -55,7 +55,7 @@ và sau này chạy trên máy chủ/máy chủ phòng khi làm online (cùng se
 - **Chỉnh độ khó / thêm màn:** thêm 1 dòng vào `LEVELS` trong `core/config.js`, thêm nền vào `BACKGROUNDS`
   trong `tools/build_assets.py`, chạy `npm run assets <thư_mục_gốc> -- --only backgrounds`, rồi `npm run balance`.
 - **Đổi kiểu hiệu ứng niệm bùa:** `SIGIL_STYLE` trong `core/config.js` (xem thử: thêm `?sigil=1..4` vào URL).
-- **Bùa quét nhiều ma:** vùng trúng ở `inArea()` trong `core/sim.js`; độ rộng `BAL.beamBand`, `BAL.vPad`.
+- **Luật trúng bùa:** vẽ ký hiệu nào thì MỌI con ma đang chờ đúng ký hiệu đó (ký hiệu đầu tiên còn lại của nó) đều mất ký hiệu ấy, vẽ ở đâu cũng được (`Sim.cast` trong `core/sim.js`, sự kiện `cast {s, targets}`). Từ 2 con trở lên = combo, cộng `BAL.comboBonus` mỗi con thêm.
 - **Đổi animation của bùa:** `SPELL_ANIM` trong `core/config.js`. Thêm animation mới: thêm vào `ANIMS` trong build_assets.
 - **Thêm bùa mới:** 1) nhận dạng trong `recognizer.js` + test, 2) thêm vào `POOL`/`GLYPH`, 3) hiệu ứng trong `session.handleEvents`.
 - **Thêm hiệu ứng:** `fx.add({t:'tên', ...})` trong session + một nhánh trong `drawFx` (render/draw.js).
@@ -121,3 +121,30 @@ ghép 20.85–23.4s (cú đập + ầm rền) với 25.4–31.0s (riser → ti�
 Mốc hình trong `render/outro.js` (bảng `T`): cú đập 0.15s = thời gian ngưng · riser 2.6–4.45s = sao hội tụ ·
 tiếng vút 4.55s = bắn · tiếng nổ 6.05s = trúng boss · hết 7.85s = bảng chiến thắng. Đổi âm thanh khác thì chỉnh bảng `T`.
 Nhạc nền tạm im trong đoạn kết (`audio.duck`).
+
+## Màn mở đầu (splash) & asset mới
+- `#splash` (index.html): cô Cú thủ thư (`assets/sprites/owl.webp`, 12 khung chớp mắt, ảnh 2x) với chữ "MT" xanh mực trên ngực, nền `assets/img/splash.webp`.
+  Chạm bất kỳ đâu -> `audio.unlock()` ngay trong sự kiện chạm -> nhạc nền phát luôn. iPhone có thêm dòng nhắc bật âm thanh / tắt chế độ im lặng.
+  `?debug` bỏ qua màn này. Bảng chào / mẹo toàn màn hình chỉ hiện sau khi đóng splash.
+- `audio.unlock()` đặt `navigator.audioSession.type = 'playback'` (iOS 17+) để vẫn có tiếng khi gạt im lặng.
+- `assets/audio/laugh.mp3`: tiếng cười Ma trùm trong phim mở đầu (cue 'laugh').
+- `tools/slice_sheets.py`: cắt tấm sprite AI (nền xanh đậm/trắng, có nhãn) thành khung PNG trong suốt -> `raw/frames/<tên>/`.
+  `assets/img/bg5.webp`: nền sân thượng lâu đài (dành cho màn 5).
+
+## Cốt truyện "Cuốn Sách Mực" (5 màn)
+- Phim mở đầu (`render/cutscene.js`, 14s): toàn cảnh học viện -> Cún ôn bùa, Cô Cú dặn -> sấm, tắt đèn (đôi mắt + "??") -> Vua Mực cướp sách, xé 5 trang -> "Phải lấy lại từng trang!".
+- `core/config.js`: `LEVELS` 1–5, mỗi màn có `boss` (BOSSES: book, chand, pumpkin, cauldron, king) và `page`.
+  Loại ma theo đợt (`kind`): wisp · swarm (đàn ma con chung ký hiệu) · inv (tàng hình) · knight (⚡ trước, phải dùng sét phá khiên).
+  `UNLOCK`: Sét từ màn 2, Lá chắn từ màn 3, Đồng hồ cát từ màn 4 (Sim báo `locked` nếu vẽ bùa chưa có).
+  `PALS`: Mèo Mun (màn 2+, xóa 1 ký hiệu), Ếch Ộp (3+, nuốt 1 con ma), Dơi Bin (4+, đẩy lùi + phá đồ rơi). KHÔNG đứng quanh Cún: chỉ là biểu tượng góc dưới trái (`palIcon`), người chơi chạm để gọi (`Sim.usePal`, có hồi chiêu); lúc gọi nhân vật hiện ra chốc lát (fx 'cameo').
+- Đồng hồ cát: recognizer nhận nét TỰ CẮT CHÉO qua giữa (⧗ / số 8) -> `HOURGLASS`; ma + đồ rơi chậm `BAL.slowK` trong `BAL.slowSec`.
+- Vua Mực pha 2: tắt đèn (`sim.dark`) định kỳ. Chỉ boss màn cuối mới có đòn kết liễu (`finale`); boss màn 1–4 gục bình thường.
+- Sau boss màn 1–4: `render/story.js drawPage`: trang rơi -> Cún bắt -> Vua Mực ở cửa sổ (màn 3: bức vẽ của Mực Con) -> thẻ "Bạn học được bùa mới!" -> thẻ "Bạn đồng hành mới!" -> Cún chạy sang PHẢI, tối dần. Màn 4: cưỡi chổi bay lên phải. Sau đó Session: (bài học của Cô Cú, sáng dần -> học xong tối dần) -> màn mới sáng dần, Cún chạy từ TRÁI vào giữa (`session.fade`).
+- Bài học bùa mới của Cô Cú: `game/tutorial.js LESSONS[màn]`, chạy 1 lần (localStorage `dd-les<màn>`), bỏ qua được.
+- Hạ Vua Mực: outro (phép tối thượng) -> `drawEnding` (teo thành Mực Con, làm bạn, sách lành lại) -> bảng chiến thắng -> `drawTbc` (trang thứ 6 bay về mặt trăng, "Còn tiếp…") -> menu.
+- Hiệu ứng học từ Doodle: đèn sân khấu lúc vào màn (`drawSpot`), khói "bùm" khi diệt ma (`fx_poof`), tắt đèn còn đôi mắt (`fx_eyes`), mũ rơi khi Mun xuất hiện (`fx_hat`).
+
+## Asset cốt truyện
+- `tools/slice_sheets.py [tên tấm...]`: cắt tấm AI (raw/sheets2/*.png) -> raw/frames/<hoạt ảnh>/NN.png. Xử lý nền tối/nền giấy, nhãn chữ, đường kẻ, dấu ✦ Gemini.
+- `tools/build_story_assets.py [hoạt ảnh...]`: đóng dải webp (ảnh 1.5x, manifest `k` = 1/1.5) và GỘP vào manifest.json. Sprite có `lazy: 1` tải ngầm sau khi vào menu.
+  Lưu ý: chạy lại `tools/build_assets.py` sẽ ghi đè manifest -> chạy `build_story_assets.py` ngay sau đó.
